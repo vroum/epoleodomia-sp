@@ -27,13 +27,65 @@ Greek urban-planning data (epoleodomia) for **Spetses Island**, served from Post
 | `epol-site.lsp` | 299 | `OROITABLE` `ETABLE` `EREPORT` `ENOTES` `ARCHEO` `CHURCH` `NATURA` `AIGIALOS` `REMATA` |
 | `epol-bounds.lsp` | 477 | `KAEK` `EKAEK` `OT` `EOBT` `KAEK_OP` |
 | `epol-ktima.lsp` | 1214 | `KLAYERS` `KPST` `KGEOM` `KGEOMV` `KVERT` `KGRID` `AIGDRAW` `KCHECK` |
-| `epol-raster.lsp` | 530 | `FEK` `DJI` `DE` `CLIPR` |
+| `epol-raster.lsp` | 660 | `ERASTER` `FEK` `DJI` `DE` `CLIPR` |
 | `epol-util.lsp` | 120 | `ETRANS` `ELAYERS` `EHELP` |
 | `kexport.lsp` | 256 | `KEXPORT` — loaded separately |
 | `kfilters.lsp` | 250 | `KFILTERS` `KFILTERSDEL` `KTSEED` — loaded separately |
 
-All 29 `epoleodomia` commands are unchanged; only their file location moved.
-Editing one module means reloading only that module during development.
+All 29 original `epoleodomia` commands are unchanged; only their file location
+moved. Editing one module means reloading only that module during development.
+
+## Adding your own georeferenced map sheets
+
+For rasters you georeferenced yourself — ΓΥΣ 1:5000, διαγράμματα αιγιαλού,
+historic plans — as opposed to the ΦΕΚ diagrams that `download_rasters.py`
+fetches from TEE.
+
+**One-time setup:**
+
+```
+psql -d gis -f sql/004_raster_sheets.sql
+pip install rasterio shapely
+```
+
+**Per collection:**
+
+```
+mkdir rasters\gys5000                      # drop the GeoTIFFs in here
+
+python ingest_rasters.py --collection gys5000 --scale 5000        # dry run
+python ingest_rasters.py --collection gys5000 --scale 5000 --commit
+```
+
+Dry run is the default; nothing is written without `--commit`. Re-running is
+safe — unchanged files are skipped, changed files are updated, and your manual
+edits to `role` / `georef_*` / `doc_ref` / `notes` are never overwritten by a
+rescan. Files that must be in **EPSG:2100** and north-up: anything else is
+rejected with a reason rather than silently accepted.
+
+Then in AutoCAD: **`ERASTER`** → pick collection → pick role → pick area.
+
+Useful flags:
+
+| Flag | Why |
+|---|---|
+| `--role historical` | Evidence-grade document with poor/non-conformal georeferencing (e.g. the 1867 plan). Never returned by default, never traced on. |
+| `--role context` | Orientation only — coarse scale, large RMS. |
+| `--georef-method tps --georef-points 12 --georef-rms 8.5` | Records *how* it was georeferenced. Matters if you ever cite the document. |
+| `--optimize` | Writes a tiled copy with overviews to `<root>/_optimized`. Originals untouched. Defaults to lossless LZW because JPEG rings around map line work and text. |
+
+### The `role` column, and why it matters
+
+Before this, `/rasters/fek/simple` carried a hardcoded list of six excluded
+ΦΕΚ. Measured on the live catalog: a single point was claimed by **8.9 sheets
+on average** (max 15), because five 1:100000–1:200000 index sheets with
+**52–288 m georef RMS** and bounding boxes of 11 500 and 26 900 km² blanket the
+whole island.
+
+`role` moves that knowledge into the data, so every query path agrees —
+`find_rasters_at_point()` did *not* have the blacklist and therefore disagreed
+with the endpoint. `sp_geodata.rasters_at_point()` replaces it, filters on role,
+and orders finest-scale-first (which is also the correct draw order).
 
 ## Setup
 

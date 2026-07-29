@@ -28,6 +28,18 @@ MODULES = ["epol-core.lsp", "epol-site.lsp", "epol-bounds.lsp",
            "epol-ktima.lsp", "epol-raster.lsp", "epol-util.lsp"]
 EXTRA = ["kexport.lsp", "kfilters.lsp"]
 
+# Things deliberately added after the v2.0 baseline. Everything NOT listed here
+# must still match the baseline exactly, so the checks keep catching accidental
+# loss, duplication or renaming - they just stop flagging intentional work.
+# Add to this list when you add a command; that is the point of the friction.
+ADDED_COMMANDS = {
+    "ERASTER",          # generic sheet loader over v_all_rasters
+}
+ADDED_HELPERS = set()
+ADDED_GLOBALS = {
+    "*eraster-collection*",   # ERASTER remembers the last collection
+}
+
 fails, warns = [], []
 
 
@@ -146,11 +158,19 @@ for c in sorted(orig_cmds):
     elif new_cmds[c] > 1:
         fail(f"command {c} duplicated in {where[c]}")
 for c in sorted(new_cmds):
-    if c not in orig_cmds:
-        fail(f"command {c} INVENTED (not in original)")
+    if c in orig_cmds:
+        continue
+    if c in ADDED_COMMANDS:
+        ok(f"command {c} added since baseline (declared) -> {where[c][0]}")
+    else:
+        fail(f"command {c} INVENTED - if intentional, add it to "
+             f"ADDED_COMMANDS at the top of this file")
+for c in sorted(ADDED_COMMANDS - set(new_cmds)):
+    fail(f"command {c} is declared in ADDED_COMMANDS but does not exist")
 
 if not fails:
-    ok(f"all {len(orig_cmds)} commands present exactly once")
+    ok(f"all {len(orig_cmds)} baseline commands present exactly once "
+       f"(+{len(ADDED_COMMANDS)} added)")
     for m in MODULES:
         cs = [f.name for f in parsed[m] if f.kind == "command"]
         if cs:
@@ -159,22 +179,30 @@ if not fails:
 # --------------------------------------------------------------------------
 print("\n[4] helper defuns + globals preserved")
 # --------------------------------------------------------------------------
-for kind, label in (("helper", "helper defun"), ("global", "global setq")):
+for kind, label, allowed in (("helper", "helper defun", ADDED_HELPERS),
+                             ("global", "global setq", ADDED_GLOBALS)):
     o = Counter(f.name for f in orig_forms if f.kind == kind)
     nw = Counter()
     for m in MODULES:
         nw.update(f.name for f in parsed[m] if f.kind == kind)
     lost = [k for k in o if nw[k] == 0]
     dup = [k for k in nw if nw[k] > 1]
-    new = [k for k in nw if k not in o]
+    new = [k for k in nw if k not in o and k not in allowed]
+    declared = [k for k in nw if k not in o and k in allowed]
+    ghost = [k for k in allowed if k not in nw]
     for k in lost:
         fail(f"{label} {k} LOST")
     for k in dup:
         fail(f"{label} {k} duplicated ({nw[k]}x)")
     for k in new:
-        fail(f"{label} {k} INVENTED")
-    if not (lost or dup or new):
-        ok(f"{len(o)} {label}s preserved, exactly once each")
+        fail(f"{label} {k} INVENTED - if intentional, declare it in "
+             f"the ADDED_* set at the top of this file")
+    for k in ghost:
+        fail(f"{label} {k} is declared as added but does not exist")
+    if not (lost or dup or new or ghost):
+        ok(f"{len(o)} baseline {label}s preserved, exactly once each"
+           + (f" (+{len(declared)} added: {' '.join(sorted(declared))})"
+              if declared else ""))
 
 # --------------------------------------------------------------------------
 print("\n[5] called-but-undefined namespaced functions")

@@ -68,6 +68,8 @@ clean/
 ├── kexport.lsp            # KEXPORT (loaded separately)
 ├── kfilters.lsp           # KFILTERS KFILTERSDEL KTSEED (loaded separately)
 ├── config.py              # Service URLs, bbox, DB settings (reads .env)
+├── ingest_rasters.py      # Register locally georeferenced map sheets (GYS 5000,
+│                          #   aigialos, historic) -> sp_geodata.raster_sheets
 ├── fetch_layer.py         # ArcGIS REST API query functions
 ├── load_postgis.py        # GeoJSON to PostGIS loader with change tracking
 ├── sync_all.py            # Main CLI orchestration script
@@ -86,7 +88,9 @@ clean/
 └── sql/
     ├── 001_tables.sql     # Complete DDL (all tables, indexes, constraints)
     ├── 002_views.sql      # All views (corrected)
-    └── 003_seed.sql       # Post-sync seed (raster catalog, forest areas)
+    ├── 003_seed.sql       # Post-sync seed (raster catalog, forest areas)
+    └── 004_raster_sheets.sql  # Generic sheet catalog + v_all_rasters +
+                            #   raster_exclusions + rasters_at_point()
 ```
 
 ---

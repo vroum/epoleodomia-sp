@@ -3893,6 +3893,133 @@ async def get_de_rasters(
 
 
 # =============================================================================
+# RASTERS - GENERIC SHEET CATALOG (sp_geodata.raster_sheets + v_all_rasters)
+# =============================================================================
+# Locally georeferenced map sheets: GYS 1:5000, aigialos diagrams, historic
+# plans. Registered by ingest_rasters.py, see sql/004_raster_sheets.sql.
+#
+# These two endpoints query v_all_rasters, so they can also reach the FEK, DJI
+# and DE collections through the same interface. They use query_geom (the best
+# available geometry per row: useful_area > footprint > extent) rather than the
+# file envelope, and they filter on role, which is why they will not hand you a
+# 1:200000 index sheet with 288 m RMS.
+
+
+@app.get("/rasters/sheets")
+async def get_raster_sheets(
+    minx: float = Query(..., description="Minimum X coordinate"),
+    miny: float = Query(..., description="Minimum Y coordinate"),
+    maxx: float = Query(..., description="Maximum X coordinate"),
+    maxy: float = Query(..., description="Maximum Y coordinate"),
+    collection: str = Query(None, description="gys5000 | aigialos | historic | fek | dji | de"),
+    role: str = Query("working", description="Comma-separated: working,context,historical"),
+    max_scale: int = Query(None, description="Skip sheets coarser than 1:max_scale"),
+):
+    """
+    Rasters covering a bounding box, from any catalogued collection.
+
+    Ordered finest-scale first, which is also the correct draw order.
+    role defaults to 'working' so context and historical sheets stay out of the
+    way unless asked for. Pass role=working,context,historical for everything.
+    """
+    roles = [r.strip() for r in (role or "working").split(",") if r.strip()]
+
+    sql = """
+    SELECT source_table, collection, source_id, filename, path,
+           role, nominal_scale, res_m, georef_rms, doc_ref, file_size_bytes,
+           ST_XMin(extent), ST_YMin(extent), ST_XMax(extent), ST_YMax(extent)
+    FROM sp_geodata.v_all_rasters
+    WHERE query_geom IS NOT NULL
+      AND ST_Intersects(query_geom, ST_MakeEnvelope(%s, %s, %s, %s, 2100))
+      AND role = ANY(%s)
+      AND (%s::text IS NULL OR collection = %s::text)
+      AND (%s::int IS NULL OR COALESCE(nominal_scale, 0) <= %s::int)
+    ORDER BY COALESCE(nominal_scale, 2147483647) ASC,
+             COALESCE(res_m, 1e9) ASC,
+             filename
+    """
+    results = execute_query(sql, (minx, miny, maxx, maxy, roles,
+                                  collection, collection,
+                                  max_scale, max_scale))
+
+    sheets, paths = [], []
+    for row in results:
+        path = row[4]
+        if not path:
+            continue
+        path = path.replace("/", "\\")
+        paths.append(path)
+        sheets.append({
+            "source": row[0],
+            "collection": row[1],
+            "id": row[2],
+            "filename": row[3],
+            "path": path,
+            "role": row[5],
+            "scale": row[6],
+            "res_m": float(row[7]) if row[7] is not None else None,
+            "georef_rms": float(row[8]) if row[8] is not None else None,
+            "doc_ref": row[9],
+            "size_bytes": row[10],
+            "extent": [row[11], row[12], row[13], row[14]],
+        })
+
+    return {"count": len(sheets), "paths": paths, "sheets": sheets}
+
+
+@app.get("/rasters/sheets/simple", response_class=PlainTextResponse)
+async def get_raster_sheets_simple(
+    minx: float = Query(..., description="Minimum X coordinate"),
+    miny: float = Query(..., description="Minimum Y coordinate"),
+    maxx: float = Query(..., description="Maximum X coordinate"),
+    maxy: float = Query(..., description="Maximum Y coordinate"),
+    collection: str = Query(None, description="Restrict to one collection"),
+    role: str = Query("working", description="Comma-separated roles"),
+    max_scale: int = Query(None, description="Skip sheets coarser than 1:max_scale"),
+):
+    """
+    Pipe-delimited form for LISP parsing.
+
+    Format: path|collection|doc_ref_ascii|scale|rms|role
+    One per line, finest scale first. Greek in doc_ref is transliterated so it
+    is safe to build AutoCAD layer names from it.
+    """
+    roles = [r.strip() for r in (role or "working").split(",") if r.strip()]
+
+    sql = """
+    SELECT path, collection, doc_ref, nominal_scale, georef_rms, role
+    FROM sp_geodata.v_all_rasters
+    WHERE query_geom IS NOT NULL
+      AND path IS NOT NULL
+      AND ST_Intersects(query_geom, ST_MakeEnvelope(%s, %s, %s, %s, 2100))
+      AND role = ANY(%s)
+      AND (%s::text IS NULL OR collection = %s::text)
+      AND (%s::int IS NULL OR COALESCE(nominal_scale, 0) <= %s::int)
+    ORDER BY COALESCE(nominal_scale, 2147483647) ASC,
+             COALESCE(res_m, 1e9) ASC,
+             filename
+    """
+    results = execute_query(sql, (minx, miny, maxx, maxy, roles,
+                                  collection, collection,
+                                  max_scale, max_scale))
+
+    lines = []
+    for path, coll, doc_ref, scale, rms, row_role in results:
+        if not path:
+            continue
+        lines.append("|".join([
+            path.replace("/", "\\"),
+            coll or "",
+            _transliterate_greek(doc_ref or ""),
+            str(int(scale)) if scale else "",
+            f"{rms:.2f}" if rms is not None else "",
+            row_role or "",
+        ]))
+
+    return "\n".join(lines)
+
+
+# =============================================================================
 # UTILITY FUNCTIONS
 # =============================================================================
 

@@ -502,6 +502,134 @@
   )
 )
 
+;;; =============================================================================
+;;; ERASTER - generic sheet loader (sp_geodata.raster_sheets / v_all_rasters)
+;;; =============================================================================
+;;; Loads locally georeferenced map sheets: GYS 1:5000, aigialos diagrams,
+;;; historic plans, and - through the same view - the FEK / DJI / DE
+;;; collections. Registered by ingest_rasters.py.
+;;;
+;;; Why this exists alongside FEK/DJI/DE: those three query three different
+;;; tables with three different schemas. This one queries v_all_rasters, so a
+;;; new collection needs no new command.
+;;;
+;;; Two things it does that the older commands do not:
+;;;   - filters on role, so a 1:200000 index sheet with 288 m RMS never lands
+;;;     on top of your drawing unless you ask for it by name
+;;;   - returns finest scale first, which is the correct draw order
+;;;
+;;; Layer naming: R_<COLLECTION>_<doc_ref>, ASCII-transliterated server side.
+
+(setq *eraster-collection* "ALL")   ; remembered between calls
+
+(defun c:ERASTER (/ bbox inp url response lines line parts
+                    rpath coll docref scale rms role
+                    lay count skipped roles)
+
+  (princ "\n=== Raster Sheets ===")
+
+  ;; --- which collection --------------------------------------------------
+  (princ (strcat "\nCollection [ALL/gys5000/aigialos/historic/fek/dji/de] <"
+                 *eraster-collection* ">: "))
+  (setq inp (getstring))
+  (if (/= inp "") (setq *eraster-collection* inp))
+  (setq coll *eraster-collection*)
+
+  ;; --- which roles -------------------------------------------------------
+  (initget "Working All Context Historical")
+  (setq inp (getkword
+              "\nRole [Working/Context/Historical/All] <Working>: "))
+  (setq roles
+    (cond
+      ((= inp "All")        "working,context,historical")
+      ((= inp "Context")    "context")
+      ((= inp "Historical") "historical")
+      (T                    "working")
+    )
+  )
+
+  (princ "\nSelect area to load sheets...")
+  (setq bbox (epol:get-bbox "\nPick first corner: " "\nPick opposite corner: "))
+
+  (if (null bbox)
+    (princ "\nCancelled.")
+    (progn
+      (setq url (epol:build-url "/rasters/sheets/simple"
+                  (append
+                    (list (cons "minx" (caar bbox))
+                          (cons "miny" (cadar bbox))
+                          (cons "maxx" (caadr bbox))
+                          (cons "maxy" (cadadr bbox)))
+                    (list (cons "role" roles))
+                    (if (/= (strcase coll) "ALL")
+                      (list (cons "collection" coll))
+                    )
+                  )))
+
+      (princ "\nContacting API...")
+      (setq response (epol:http-get url))
+
+      (if (null response)
+        (princ "\nError: could not retrieve data. Is the API running?")
+        (progn
+          (setq response (epol:remove-cr response))
+          (setq lines (epol:split response "\n"))
+          (setq count 0  skipped 0)
+
+          ;; path|collection|doc_ref_ascii|scale|rms|role
+          (foreach line lines
+            (if (and line (> (strlen line) 0))
+              (progn
+                (setq parts (epol:split line "|"))
+                (if (>= (length parts) 6)
+                  (progn
+                    (setq rpath  (nth 0 parts)
+                          coll   (nth 1 parts)
+                          docref (nth 2 parts)
+                          scale  (nth 3 parts)
+                          rms    (nth 4 parts)
+                          role   (nth 5 parts))
+
+                    (setq lay (strcat "R_" (strcase coll)))
+                    (if (and docref (/= docref ""))
+                      (setq lay (strcat lay "_"
+                                  (vl-string-translate "/" "_"
+                                    (vl-string-translate " " "_" docref))))
+                    )
+
+                    (princ (strcat "\n  " (strcase coll)
+                             (if (and scale (/= scale "")) (strcat "  1:" scale) "")
+                             (if (and rms (/= rms "")) (strcat "  RMS " rms "m") "")
+                             (if (/= role "working") (strcat "  [" role "]") "")))
+
+                    (if (epol:load-raster rpath coll lay)
+                      (setq count (1+ count))
+                      (progn
+                        (setq skipped (1+ skipped))
+                        (princ "   <- FAILED to attach")
+                      )
+                    )
+                  )
+                  (setq skipped (1+ skipped))
+                )
+              )
+            )
+          )
+
+          (princ (strcat "\n\nLoaded " (itoa count) " sheet(s)"))
+          (if (> skipped 0)
+            (princ (strcat ", " (itoa skipped) " failed/skipped")))
+          (if (= count 0)
+            (princ (strcat "\nNothing matched. Try Role=All, or check that "
+                           "ingest_rasters.py has registered the collection.")))
+          (princ ".")
+        )
+      )
+    )
+  )
+  (princ)
+)
+
 ;;; Run GDAL command with QGIS environment
 (defun epol:run-gdal (cmd-str / wsh result exit-code full-cmd qgis-root)
   (setq qgis-root *qgis-root*)
