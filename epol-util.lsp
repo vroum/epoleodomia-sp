@@ -1,0 +1,120 @@
+;;; ==========================================================================
+;;; epol-util.lsp - UTILITIES - transparency, layer listing, help
+;;; ==========================================================================
+;;;
+;;;   ETRANS ELAYERS EHELP
+;;;
+;;; Part of EPOLEODOMIA GIS Tools v2.1. Do not load directly - load
+;;; epoleodomia.lsp, which loads every module in the correct order.
+;;; Contains 3 top-level forms.
+;;; ==========================================================================
+
+;;; =============================================================================
+;;; UTILITY COMMANDS
+;;; =============================================================================
+
+;;; ETRANS - Enable transparency on drone rasters
+(defun c:ETRANS (/ ss i ent layer-name img-obj count)
+  (princ "\n=== Enable Raster Transparency ===")
+
+  (setq count 0)
+  (setq ss (ssget "_X" '((0 . "IMAGE"))))
+
+  (if ss
+    (progn
+      (setq i 0)
+      (while (< i (sslength ss))
+        (setq ent (ssname ss i))
+        (setq layer-name (cdr (assoc 8 (entget ent))))
+
+        ;; Only DJI rasters
+        (if (wcmatch layer-name "R_DJI_*")
+          (progn
+            (setq img-obj (vlax-ename->vla-object ent))
+            (if img-obj
+              (progn
+                (vl-catch-all-apply 'vla-put-Transparency (list img-obj :vlax-true))
+                (setq count (1+ count))
+              )
+            )
+          )
+        )
+        (setq i (1+ i))
+      )
+      (princ (strcat "\nEnabled transparency on " (itoa count) " rasters."))
+    )
+    (princ "\nNo rasters found.")
+  )
+  (princ)
+)
+
+;;; ELAYERS - List epoleodomia layers
+(defun c:ELAYERS (/ layer-data)
+  (princ "\n=== Epoleodomia Layers ===")
+  (setq layer-data (tblnext "LAYER" T))
+  (while layer-data
+    (if (or (wcmatch (cdr (assoc 2 layer-data)) "EPOL_*")
+            (wcmatch (cdr (assoc 2 layer-data)) "R_*"))
+      (princ (strcat "\n  " (cdr (assoc 2 layer-data))))
+    )
+    (setq layer-data (tblnext "LAYER"))
+  )
+  (princ "\n")
+  (princ)
+)
+
+;;; EHELP - Show help
+(defun c:EHELP ()
+  (princ "\n")
+  (princ "\n========================================")
+  (princ "\n EPOLEODOMIA GIS TOOLS v2.0")
+  (princ "\n========================================")
+  (princ "\n")
+  (princ "\n SITE ANALYSIS:")
+  (princ "\n   EREPORT   - Full planning report table (parcel-based)")
+  (princ "\n   ENOTES    - Topographic notes / PARATHRHSEIS (auto-filled)")
+  (princ "\n   ETABLE    - Building regulations ruled table")
+  (princ "\n   OROITABLE - Building regulations MTEXT annotation")
+  (princ "\n   ARCHEO   - Archaeological sites")
+  (princ "\n   CHURCH   - Closest church distance")
+  (princ "\n   NATURA   - Natura 2000 / forest")
+  (princ "\n   AIGIALOS - Shoreline distance")
+  (princ "\n   REMATA   - Stream distances")
+  (princ "\n")
+  (princ "\n BOUNDARIES:")
+  (princ "\n   KAEK     - Cadastral parcel number")
+  (princ "\n   EKAEK    - Draw KAEK parcel + neighbors")
+  (princ "\n   OT       - Building block number")
+  (princ "\n   EOBT     - Draw OT polygon + neighbors")
+  (princ "\n   KAEK_OP  - Draw operating cadastre parcel + neighbors")
+  (princ "\n")
+  (princ "\n KTIMATOLOGIO DIAGRAMS:")
+  (princ "\n   KLAYERS  - Create official diagram layers (PINAKAS I)")
+  (princ "\n   KPST     - PST_KAEK background from operating cadastre")
+  (princ "\n   KCHECK   - Validate drawing vs diagram profile (TD/DGM/TDGM)")
+  (princ "\n   KGEOM    - Diorthwsh oriwn: TOPO_PROP -> AREA_D/A + finals + table")
+  (princ "\n   KGEOMV   - Diorthwsh kathetwn: AX polylines -> VST_FINAL + table")
+  (princ "\n   KVERT    - Vertex circles + numbering + XY table")
+  (princ "\n   KGRID    - Kannabos 10x10cm + perimeter coordinates")
+  (princ "\n   AIGDRAW  - Existing aigialos/paralia lines in bbox (FEK labels)")
+  (princ "\n")
+  (princ "\n RASTERS:")
+  (princ "\n   FEK      - Planning diagram rasters")
+  (princ "\n   DJI      - Drone orthophotos")
+  (princ "\n   DE       - DE rasters")
+  (princ "\n   CLIPR    - Clip raster to area")
+  (princ "\n")
+  (princ "\n UTILITIES:")
+  (princ "\n   ETRANS   - Enable raster transparency")
+  (princ "\n   ELAYERS  - List epoleodomia layers")
+  (princ "\n   EHELP    - Show this help")
+  (princ "\n")
+  (princ "\n DATA SOURCES:")
+  (princ "\n   epoleodomia: OT, planning, building regs")
+  (princ "\n   sp_geodata:  KAEK, churches, streams, rasters")
+  (princ "\n")
+  (princ "\n API Server: http://127.0.0.1:8000")
+  (princ "\n========================================")
+  (princ "\n")
+  (princ)
+)

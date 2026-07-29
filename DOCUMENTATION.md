@@ -56,7 +56,17 @@ clean/
 ├── .env.example           # Template for .env
 ├── .gitignore             # Excludes .env, __pycache__, logs, rasters
 ├── api_server.py          # FastAPI API used by AutoCAD LISP commands
-├── epoleodomia.lsp        # AutoCAD command definitions
+├── epoleodomia.lsp        # LISP loader (v2.1) - loads the 6 epol-*.lsp modules
+├── epol-core.lsp          #   config, HTTP, parsing, layers, drawing, tables
+├── epol-site.lsp          #   OROITABLE ETABLE EREPORT ENOTES ARCHEO CHURCH
+│                          #   NATURA AIGIALOS REMATA
+├── epol-bounds.lsp        #   KAEK EKAEK OT EOBT KAEK_OP
+├── epol-ktima.lsp         #   KLAYERS KPST KGEOM KGEOMV KVERT KGRID
+│                          #   AIGDRAW KCHECK
+├── epol-raster.lsp        #   FEK DJI DE CLIPR
+├── epol-util.lsp          #   ETRANS ELAYERS EHELP
+├── kexport.lsp            # KEXPORT (loaded separately)
+├── kfilters.lsp           # KFILTERS KFILTERSDEL KTSEED (loaded separately)
 ├── config.py              # Service URLs, bbox, DB settings (reads .env)
 ├── fetch_layer.py         # ArcGIS REST API query functions
 ├── load_postgis.py        # GeoJSON to PostGIS loader with change tracking
