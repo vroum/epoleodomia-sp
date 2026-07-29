@@ -11,12 +11,13 @@ Nothing is paraphrased or retyped: every byte of every form is carried over
 verbatim. Verification is done by comparing the multiset of form texts.
 """
 
+import os
 import re
 import sys
-import unicodedata
 from collections import Counter, OrderedDict
 
-SRC = "/sessions/bold-exciting-archimedes/mnt/clean/epoleodomia.lsp"
+HERE = os.path.dirname(os.path.abspath(__file__)) + os.sep
+SRC = HERE + "epoleodomia.lsp"
 
 
 # --------------------------------------------------------------------------
@@ -421,7 +422,7 @@ def main():
         sys.exit("ABORT: map does not exactly cover the source")
 
     # ---- emit ----
-    outdir = "/sessions/bold-exciting-archimedes/mnt/clean/"
+    outdir = HERE
     written = {}
     for fname, spec in MODULES.items():
         chosen = []

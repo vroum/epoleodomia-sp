@@ -12,15 +12,17 @@ Checks, against the pre-refactor file recovered from git:
   6  kexport.lsp / kfilters.lsp dependencies still satisfied
 """
 
+import os
 import re
 import subprocess
 import sys
 from collections import Counter
 
-sys.path.insert(0, "/sessions/bold-exciting-archimedes/mnt/outputs")
-from lspsplit import parse_forms, classify           # noqa: E402
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+from tools_lspsplit import parse_forms               # noqa: E402
 
-REPO = "/sessions/bold-exciting-archimedes/mnt/clean/"
+REPO = HERE + os.sep
 LOADER = "epoleodomia.lsp"
 MODULES = ["epol-core.lsp", "epol-site.lsp", "epol-bounds.lsp",
            "epol-ktima.lsp", "epol-raster.lsp", "epol-util.lsp"]
@@ -113,12 +115,14 @@ if fails:
 
 # --------------------------------------------------------------------------
 print("\n[2] recover the pre-refactor original from git")
+# the monolith is the last commit in which epoleodomia.lsp was > 1000 lines
+BASELINE = os.environ.get("EPOL_BASELINE", "5088735")
 # --------------------------------------------------------------------------
 orig = subprocess.run(
-    ["git", "-C", REPO, "show", "HEAD:epoleodomia.lsp"],
+    ["git", "-C", REPO, "show", BASELINE + ":epoleodomia.lsp"],
     capture_output=True, check=True).stdout.decode("utf-8")
 orig_forms, _ = parse_forms(orig)
-ok(f"HEAD:epoleodomia.lsp = {len(orig.splitlines())} lines, "
+ok(f"{BASELINE}:epoleodomia.lsp = {len(orig.splitlines())} lines, "
    f"{len(orig_forms)} top-level forms")
 
 # --------------------------------------------------------------------------
