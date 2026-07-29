@@ -67,7 +67,7 @@
 (defun c:EHELP ()
   (princ "\n")
   (princ "\n========================================")
-  (princ "\n EPOLEODOMIA GIS TOOLS v2.0")
+  (princ "\n EPOLEODOMIA GIS TOOLS v2.1")
   (princ "\n========================================")
   (princ "\n")
   (princ "\n SITE ANALYSIS:")
