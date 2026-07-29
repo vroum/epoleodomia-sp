@@ -1,0 +1,33 @@
+# --- secrets ---
+.env
+*.key
+*.pem
+
+# --- python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# --- generated / bulky data ---
+logs/
+rasters/
+*.tif
+*.tfw
+*.jpg
+*.png
+
+# --- editor / OS ---
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+*.swp
+
+# --- AutoCAD junk ---
+*.bak
+*.dwl
+*.dwl2
+*.sv$
+*.ac$
+*.err

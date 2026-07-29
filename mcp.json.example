@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "cmd",
+      "args": [
+        "/c", "npx", "-y",
+        "@modelcontextprotocol/server-postgres",
+        "postgresql://${EPOL_DB_USER}:${EPOL_DB_PASSWORD}@${EPOL_DB_HOST}:${EPOL_DB_PORT}/${EPOL_DB_NAME}"
+      ]
+    },
+    "filesystem": {
+      "command": "cmd",
+      "args": [
+        "/c", "npx", "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "O:/GEODATA",
+        "O:/library",
+        "O:/CLAUDE_code area"
+      ]
+    }
+  }
+}
