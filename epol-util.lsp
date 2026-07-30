@@ -14,8 +14,23 @@
 ;;; =============================================================================
 
 ;;; ETRANS - Enable transparency on drone rasters
-(defun c:ETRANS (/ ss i ent layer-name img-obj count)
-  (princ "\n=== Enable Raster Transparency ===")
+;;; ETRANS - transparency + fade on raster layers
+;;;
+;;; Was hardcoded to R_DJI_* and so did nothing for FEK/DE/ERASTER layers.
+;;; Now covers every R_* layer.
+;;;
+;;; Note on what Transparency actually does: it makes the image's *transparent
+;;; pixels* show through, so it needs an alpha channel, a palette transparent
+;;; index, or a bitonal image. On a plain 1-band greyscale scan - which is what
+;;; the GYS 1:5000 sheets are - there is nothing to make transparent and the
+;;; call is a no-op. Fade is what helps there: it blends the image toward the
+;;; background so your linework reads on top of it.
+(defun c:ETRANS (/ ss i ent layer-name img-obj count fade inp)
+  (princ "\n=== Raster Transparency / Fade ===")
+
+  (initget 4)   ; allow zero, no negatives
+  (setq inp (getint "\nFade 0-90 [0 = off] <50>: "))
+  (setq fade (cond ((null inp) 50) ((> inp 90) 90) (T inp)))
 
   (setq count 0)
   (setq ss (ssget "_X" '((0 . "IMAGE"))))
@@ -27,13 +42,14 @@
         (setq ent (ssname ss i))
         (setq layer-name (cdr (assoc 8 (entget ent))))
 
-        ;; Only DJI rasters
-        (if (wcmatch layer-name "R_DJI_*")
+        (if (wcmatch layer-name "R_*")
           (progn
             (setq img-obj (vlax-ename->vla-object ent))
             (if img-obj
               (progn
-                (vl-catch-all-apply 'vla-put-Transparency (list img-obj :vlax-true))
+                (vl-catch-all-apply 'vla-put-Transparency
+                                    (list img-obj :vlax-true))
+                (vl-catch-all-apply 'vla-put-Fade (list img-obj fade))
                 (setq count (1+ count))
               )
             )
@@ -41,7 +57,14 @@
         )
         (setq i (1+ i))
       )
-      (princ (strcat "\nEnabled transparency on " (itoa count) " rasters."))
+      (princ (strcat "\nTransparency on + fade " (itoa fade)
+                     " applied to " (itoa count) " raster(s)."))
+      (if (> count 0)
+        (princ "\nTip: transparency needs alpha/palette/bitonal - on a plain")
+      )
+      (if (> count 0)
+        (princ "\ngreyscale scan only the fade will be visible.")
+      )
     )
     (princ "\nNo rasters found.")
   )

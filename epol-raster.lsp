@@ -633,6 +633,32 @@
   (princ)
 )
 
+;;; Fade applied to sheets as they are attached. 0 = off. Remembered.
+(setq *eraster-fade* 50)
+
+;;; Post-attach housekeeping for one image: transparency on, fade, send to back.
+;;;
+;;; Transparency only bites if the file actually carries transparency info
+;;; (alpha channel, palette index, or bitonal). The GYS 1:5000 sheets are plain
+;;; 1-band greyscale, so for those it is the fade and the draw order that do
+;;; the work - see EHELP/README.
+(defun eraster:finish (ent / obj ss)
+  (if (and ent (not (vl-catch-all-error-p
+                      (setq obj (vl-catch-all-apply
+                                  'vlax-ename->vla-object (list ent))))))
+    (progn
+      (vl-catch-all-apply 'vla-put-Transparency (list obj :vlax-true))
+      (if (and *eraster-fade* (> *eraster-fade* 0))
+        (vl-catch-all-apply 'vla-put-Fade (list obj *eraster-fade*)))
+      ;; keep rasters behind everything you draw
+      (setq ss (ssadd))
+      (ssadd ent ss)
+      (vl-catch-all-apply
+        '(lambda () (command "_.DRAWORDER" ss "" "_Back")))
+    )
+  )
+)
+
 ;;; Second half: roles, bbox, fetch, attach.
 (defun eraster:run (coll / bbox inp url response lines line parts
                          rpath rcoll docref scale rms role lay
@@ -651,7 +677,14 @@
     )
   )
 
-  (princ (strcat "\nCollection: " coll "   roles: " roles))
+  ;; --- fade -------------------------------------------------------------
+  (initget 4)
+  (setq inp (getint (strcat "\nFade 0-90 [0 = off] <"
+                            (itoa *eraster-fade*) ">: ")))
+  (if inp (setq *eraster-fade* (if (> inp 90) 90 inp)))
+
+  (princ (strcat "\nCollection: " coll "   roles: " roles
+                 "   fade: " (itoa *eraster-fade*)))
   (princ "\nSelect area to load sheets...")
   (setq bbox (epol:get-bbox "\nPick first corner: " "\nPick opposite corner: "))
 
@@ -709,7 +742,11 @@
                              (if (/= role "working") (strcat "  [" role "]") "")))
 
                     (if (epol:load-raster rpath rcoll lay)
-                      (setq count (1+ count))
+                      (progn
+                        (setq count (1+ count))
+                        ;; the freshly attached image is the last entity
+                        (eraster:finish (entlast))
+                      )
                       (progn
                         (setq skipped (1+ skipped))
                         (princ "   <- FAILED to attach")

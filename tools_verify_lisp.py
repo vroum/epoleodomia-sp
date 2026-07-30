@@ -38,9 +38,11 @@ ADDED_COMMANDS = {
 ADDED_HELPERS = {
     "eraster:collections",   # asks the API what is catalogued
     "eraster:run",           # second half of ERASTER: roles, bbox, attach
+    "eraster:finish",        # transparency + fade + draworder per image
 }
 ADDED_GLOBALS = {
     "*eraster-collection*",   # ERASTER remembers the last collection
+    "*eraster-fade*",         # ERASTER remembers the last fade value
 }
 
 fails, warns = [], []
