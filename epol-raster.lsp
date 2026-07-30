@@ -634,7 +634,8 @@
 )
 
 ;;; Fade applied to sheets as they are attached. 0 = off. Remembered.
-(setq *eraster-fade* 50)
+;;; Defaults to 0: attaching a sheet should not silently dim it.
+(setq *eraster-fade* 0)
 
 ;;; Post-attach housekeeping for one image: transparency on, fade, send to back.
 ;;;

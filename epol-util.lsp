@@ -28,9 +28,12 @@
 (defun c:ETRANS (/ ss i ent layer-name img-obj count fade inp)
   (princ "\n=== Raster Transparency / Fade ===")
 
+  ;; Default 0 on purpose: before this, ETRANS only switched transparency on.
+  ;; Defaulting the fade to anything else would silently dim the DJI
+  ;; orthophotos that this command has always been used for.
   (initget 4)   ; allow zero, no negatives
-  (setq inp (getint "\nFade 0-90 [0 = off] <50>: "))
-  (setq fade (cond ((null inp) 50) ((> inp 90) 90) (T inp)))
+  (setq inp (getint "\nFade 0-90 [0 = leave alone] <0>: "))
+  (setq fade (cond ((null inp) 0) ((> inp 90) 90) (T inp)))
 
   (setq count 0)
   (setq ss (ssget "_X" '((0 . "IMAGE"))))
@@ -49,7 +52,8 @@
               (progn
                 (vl-catch-all-apply 'vla-put-Transparency
                                     (list img-obj :vlax-true))
-                (vl-catch-all-apply 'vla-put-Fade (list img-obj fade))
+                (if (> fade 0)
+                  (vl-catch-all-apply 'vla-put-Fade (list img-obj fade)))
                 (setq count (1+ count))
               )
             )
@@ -57,14 +61,9 @@
         )
         (setq i (1+ i))
       )
-      (princ (strcat "\nTransparency on + fade " (itoa fade)
-                     " applied to " (itoa count) " raster(s)."))
-      (if (> count 0)
-        (princ "\nTip: transparency needs alpha/palette/bitonal - on a plain")
-      )
-      (if (> count 0)
-        (princ "\ngreyscale scan only the fade will be visible.")
-      )
+      (princ (strcat "\nTransparency on"
+                     (if (> fade 0) (strcat " + fade " (itoa fade)) "")
+                     " for " (itoa count) " raster(s)."))
     )
     (princ "\nNo rasters found.")
   )
