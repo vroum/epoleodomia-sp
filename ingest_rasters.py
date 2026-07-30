@@ -673,10 +673,20 @@ def main():
           + (f"   optimised {stats['optimized']}" if args.optimize else ""))
 
     if needed_warp and not args.warp_northup:
-        print(f"\n {needed_warp} file(s) are not north-up. Re-run with "
-              f"--warp-northup to resample them:")
-        print(f"   python ingest_rasters.py --collection {args.collection} "
-              f"--warp-northup --commit")
+        # rebuild the invocation faithfully - dropping --root here would hand
+        # the user a command that looks in the wrong folder
+        again = ["python ingest_rasters.py", f"--collection {args.collection}"]
+        if args.root:
+            again.append(f'--root "{args.root}"')
+        for flag, val in (("--scale", args.nominal_scale),
+                          ("--role", args.role if args.role != "working" else None),
+                          ("--doc-ref", args.doc_ref)):
+            if val:
+                again.append(f'{flag} "{val}"' if " " in str(val)
+                             else f"{flag} {val}")
+        again += ["--warp-northup", "--commit"]
+        print(f"\n {needed_warp} file(s) are not north-up. Re-run as:")
+        print("   " + " ".join(again))
 
     if missing:
         print(f"\n {len(missing)} row(s) in the catalog with no file on disk "
@@ -687,11 +697,13 @@ def main():
             print(f"   ... and {len(missing)-20} more")
 
     if problems_seen:
-        print(f"\n {len(problems_seen)} file(s) rejected. Fix and re-run:")
+        # the full reason was already printed inline next to each file; repeat
+        # only a one-line summary so nine long paragraphs do not scroll twice
+        print(f"\n {len(problems_seen)} file(s) rejected:")
         for rel, ps in problems_seen:
-            print(f"   {rel}")
-            for p in ps:
-                print(f"     - {p}")
+            first = ps[0].split(".")[0]
+            print(f"   {rel:24s} {first[:70]}"
+                  + (f"  (+{len(ps)-1} more)" if len(ps) > 1 else ""))
 
     if not args.commit:
         print("\n DRY RUN - nothing was written. Re-run with --commit.")
