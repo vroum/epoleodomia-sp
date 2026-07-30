@@ -57,6 +57,21 @@ python ingest_rasters.py --collection gys5000 --scale 5000        # dry run
 python ingest_rasters.py --collection gys5000 --scale 5000 --commit
 ```
 
+**The ΓΥΣ 1:5000 sheets need `--warp-northup`.** They are stored sideways —
+their GeoTIFF `ModelTransformation` is a rotation of ~89.4–89.5°, not
+axis-aligned. AutoCAD places attached images from an insertion point, scale and
+rotation angle and does not read rotation out of the GeoTIFF, so they would land
+wrongly. And because it is 89.5° rather than exactly 90°, it is not a lossless
+transpose either. So:
+
+```
+python ingest_rasters.py --collection gys5000 --scale 5000 --warp-northup --commit
+```
+
+That resamples them onto an axis-aligned grid in the same CRS — no reprojection,
+no datum shift, one interpolation pass. Output goes to `rasters\gys5000\_northup\`;
+originals are untouched. Pixel count grows about 2%.
+
 Dry run is the default; nothing is written without `--commit`. Re-running is
 safe — unchanged files are skipped, changed files are updated, and your manual
 edits to `role` / `georef_*` / `doc_ref` / `notes` are never overwritten by a

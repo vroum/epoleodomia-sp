@@ -56,6 +56,8 @@ try:
     import rasterio
     from rasterio.features import shapes as rio_shapes
     from rasterio.enums import Resampling
+    from rasterio.transform import Affine
+    from rasterio.warp import reproject
 except ImportError:
     MISSING.append(
         "rasterio     pip install rasterio\n"
@@ -186,6 +188,71 @@ def data_footprint_wkt(src, simplify_px=2.0, max_vertices=500):
     return geom.wkt
 
 
+def warp_northup(src_path, dst_path, resampling="cubic"):
+    """Resample a rotated/reflected raster onto an axis-aligned grid.
+
+    Source and destination CRS are identical, so this is a pure resample - no
+    reprojection, no datum shift, nothing to get wrong. The only loss is one
+    round of interpolation, which is unavoidable when the rotation is not an
+    exact multiple of 90 degrees.
+
+    Corners outside the original data are filled with the nodata value (white
+    for 8-bit, which reads as paper on a scanned sheet) and recorded in an
+    internal mask, so the footprint check afterwards sees the true outline.
+    """
+    os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+
+    with rasterio.open(src_path) as src:
+        t = src.transform
+
+        # true ground sample distance, independent of rotation
+        px = (abs(t[0] * t[4] - t[1] * t[3])) ** 0.5
+
+        # envelope of the four corners pushed through the full transform
+        xs, ys = [], []
+        for (col, row) in ((0, 0), (src.width, 0),
+                           (src.width, src.height), (0, src.height)):
+            xs.append(t[0] * col + t[1] * row + t[2])
+            ys.append(t[3] * col + t[4] * row + t[5])
+
+        minx, maxx = min(xs), max(xs)
+        miny, maxy = min(ys), max(ys)
+
+        dst_w = int(round((maxx - minx) / px))
+        dst_h = int(round((maxy - miny) / px))
+        dst_transform = Affine(px, 0.0, minx, 0.0, -px, maxy)
+
+        dtype = src.dtypes[0]
+        if src.nodata is not None:
+            fill = src.nodata
+        elif dtype == "uint8":
+            fill = 255                      # white paper, not black ink
+        else:
+            fill = 0
+
+        profile = src.profile.copy()
+        profile.update(driver="GTiff", width=dst_w, height=dst_h,
+                       transform=dst_transform, nodata=fill,
+                       tiled=True, blockxsize=512, blockysize=512,
+                       compress="lzw", BIGTIFF="IF_SAFER")
+        if dtype in ("uint8", "int8"):
+            profile["predictor"] = 2
+        profile.pop("photometric", None)
+
+        with rasterio.open(dst_path, "w", **profile) as dst:
+            for band in range(1, src.count + 1):
+                reproject(
+                    source=rasterio.band(src, band),
+                    destination=rasterio.band(dst, band),
+                    src_transform=src.transform, src_crs=src.crs,
+                    dst_transform=dst_transform, dst_crs=src.crs,
+                    src_nodata=src.nodata, dst_nodata=fill,
+                    resampling=getattr(Resampling, resampling),
+                )
+
+    return dst_path, dst_w, dst_h, px
+
+
 def inspect(path):
     """Read everything we need from one file. Returns (info, problems)."""
     info, problems = {}, []
@@ -211,12 +278,38 @@ def inspect(path):
         if src.transform.is_identity:
             problems.append("identity geotransform - the file is not georeferenced")
 
-        rot = (src.transform[1], src.transform[3])
-        if any(abs(v) > 1e-9 for v in rot):
+        # --- north-up check ------------------------------------------------
+        # AutoCAD places an attached image from an insertion point, a scale and
+        # a rotation angle, and does not read rotation out of the GeoTIFF. Any
+        # raster whose grid is not axis-aligned therefore lands wrongly.
+        #
+        # The GYS 1:5000 sheets in this project are a live example: they are
+        # stored sideways, rotated about 89.4-89.5 degrees. Note that is NOT
+        # an exact 90 degrees, so it is not a lossless transpose either - the
+        # half-degree residual has to be resampled away.
+        #
+        # Determinant sign is NOT the tell here: a perfectly normal north-up
+        # raster also has det < 0, because the row axis grows downward while y
+        # grows upward. What matters is whether the skew terms are zero.
+        t = src.transform
+        skew = (t[1], t[3])
+        det = t[0] * t[4] - t[1] * t[3]
+
+        if any(abs(v) > 1e-9 for v in skew):
+            scale = abs(det) ** 0.5
+            import math as _m
+            angle = _m.degrees(_m.atan2(t[1] / scale, t[0] / scale))
+            mirrored = det > 0
             problems.append(
-                f"rotated geotransform {rot} - AutoCAD ignores rotation on "
-                f"attached images, so this would be placed wrongly. "
-                f"gdalwarp it to a north-up grid first.")
+                f"not north-up: rotated {angle:.2f} deg"
+                + (", and mirrored" if mirrored else "")
+                + f" (skew {skew[0]:.4g},{skew[1]:.4g}, gsd {scale:.4f} m). "
+                f"AutoCAD does not read rotation from the GeoTIFF, so this "
+                f"would be placed wrongly. Re-run with --warp-northup to "
+                f"resample onto an axis-aligned grid - same CRS, no datum "
+                f"change, one interpolation pass.")
+            info["needs_warp"] = True
+            info["rotation_deg"] = angle
 
         info.update(
             width_px=src.width,
@@ -383,6 +476,15 @@ def main():
     ap.add_argument("--georef-by")
     ap.add_argument("--georef-date", help="YYYY-MM-DD")
 
+    ap.add_argument("--warp-northup", action="store_true",
+                    help="resample rotated rasters onto an axis-aligned grid "
+                         "(same CRS) into <root>/_northup. Needed for the GYS "
+                         "1:5000 sheets, which are stored sideways at ~89.5 "
+                         "deg - AutoCAD cannot place those correctly.")
+    ap.add_argument("--resampling", default="cubic",
+                    choices=["nearest", "bilinear", "cubic", "lanczos"],
+                    help="cubic (default) for scanned maps; nearest only for "
+                         "categorical data")
     ap.add_argument("--optimize", action="store_true",
                     help="write a tiled copy with overviews into <root>/_optimized")
     ap.add_argument("--compress", default="lzw", choices=["lzw", "deflate", "jpeg"],
@@ -432,8 +534,9 @@ def main():
                 (args.collection,))
     known = dict(cur.fetchall())
 
-    stats = dict(new=0, updated=0, skipped=0, failed=0, optimized=0)
+    stats = dict(new=0, updated=0, skipped=0, failed=0, optimized=0, warped=0)
     problems_seen = []
+    needed_warp = 0
 
     for path in files:
         rel = os.path.relpath(path, root).replace("\\", "/")
@@ -452,6 +555,30 @@ def main():
             stats["failed"] += 1
             print(f"  FAIL     {rel}\n           cannot read: {e}")
             continue
+
+        read_path = path
+        if info.get("needs_warp"):
+            needed_warp += 1
+
+        # --- rescue a non-north-up raster before rejecting it ---------------
+        if info.get("needs_warp") and args.warp_northup:
+            dst = os.path.join(root, "_northup", rel)
+            if args.commit:
+                try:
+                    _, ww, hh, pp = warp_northup(path, dst, args.resampling)
+                    print(f"  warp     {rel}")
+                    print(f"           -> north-up {ww}x{hh}px @ {pp:.4f} m/px "
+                          f"({args.resampling}, lzw, tiled)")
+                    read_path = dst
+                    info, problems = inspect(dst)     # re-validate the output
+                    stats["warped"] += 1
+                except Exception as e:
+                    print(f"  FAIL     {rel}\n           warp failed: {e}")
+                    stats["failed"] += 1
+                    continue
+            else:
+                print(f"  warp     {rel}  (would warp -> {dst})")
+                problems = [p for p in problems if "north-up" not in p]
 
         if problems:
             stats["failed"] += 1
@@ -477,12 +604,12 @@ def main():
               f"{human(st.st_size)}  EPSG:{info['crs_epsg']}  "
               f"[{' '.join(flags)}]")
 
-        abs_path = path
+        abs_path = read_path
         if args.optimize:
             dst = os.path.join(root, "_optimized", rel)
             if args.commit:
                 try:
-                    newsize = optimize(path, dst, args.compress, args.quality)
+                    newsize = optimize(read_path, dst, args.compress, args.quality)
                     stats["optimized"] += 1
                     print(f"           optimised -> {human(newsize)} "
                           f"({human(st.st_size)} original, "
@@ -542,7 +669,14 @@ def main():
     print(f"\n{'-'*78}")
     print(f" new {stats['new']}   updated {stats['updated']}   "
           f"skipped {stats['skipped']}   rejected/failed {stats['failed']}"
+          + (f"   warped {stats['warped']}" if args.warp_northup else "")
           + (f"   optimised {stats['optimized']}" if args.optimize else ""))
+
+    if needed_warp and not args.warp_northup:
+        print(f"\n {needed_warp} file(s) are not north-up. Re-run with "
+              f"--warp-northup to resample them:")
+        print(f"   python ingest_rasters.py --collection {args.collection} "
+              f"--warp-northup --commit")
 
     if missing:
         print(f"\n {len(missing)} row(s) in the catalog with no file on disk "

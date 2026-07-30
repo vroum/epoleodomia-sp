@@ -3905,6 +3905,35 @@ async def get_de_rasters(
 # 1:200000 index sheet with 288 m RMS.
 
 
+@app.get("/rasters/collections", response_class=PlainTextResponse)
+async def get_raster_collections():
+    """
+    What is actually catalogued, as collection|role|count|scale_hint lines.
+
+    ERASTER calls this to build its prompt, instead of carrying a hardcoded
+    list that drifts from reality. An empty response means nothing has been
+    ingested yet - which is a different problem from "nothing in this area".
+    """
+    sql = """
+    SELECT collection, role, count(*)::int AS n,
+           min(nominal_scale) AS scale_min,
+           max(nominal_scale) AS scale_max
+    FROM sp_geodata.v_all_rasters
+    GROUP BY collection, role
+    ORDER BY collection, role
+    """
+    lines = []
+    for coll, role, n, smin, smax in execute_query(sql):
+        if smin and smax and smin != smax:
+            scale = f"1:{int(smin)}-1:{int(smax)}"
+        elif smin:
+            scale = f"1:{int(smin)}"
+        else:
+            scale = ""
+        lines.append(f"{coll}|{role}|{n}|{scale}")
+    return "\n".join(lines)
+
+
 @app.get("/rasters/sheets")
 async def get_raster_sheets(
     minx: float = Query(..., description="Minimum X coordinate"),

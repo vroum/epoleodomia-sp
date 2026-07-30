@@ -35,7 +35,10 @@ EXTRA = ["kexport.lsp", "kfilters.lsp"]
 ADDED_COMMANDS = {
     "ERASTER",          # generic sheet loader over v_all_rasters
 }
-ADDED_HELPERS = set()
+ADDED_HELPERS = {
+    "eraster:collections",   # asks the API what is catalogued
+    "eraster:run",           # second half of ERASTER: roles, bbox, attach
+}
 ADDED_GLOBALS = {
     "*eraster-collection*",   # ERASTER remembers the last collection
 }
@@ -213,7 +216,7 @@ for m in MODULES:
         if f.kind == "helper":
             defined.add(f.name.lower())
 
-CALL = re.compile(r"\((\s*)((?:epol|kgeom|kvert|kgrid|kcheck):[a-z0-9_\-]+)",
+CALL = re.compile(r"\((\s*)((?:epol|kgeom|kvert|kgrid|kcheck|eraster):[a-z0-9_\-]+)",
                   re.IGNORECASE)
 called = {}
 for m in MODULES + EXTRA:

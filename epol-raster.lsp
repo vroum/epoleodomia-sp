@@ -522,18 +522,121 @@
 
 (setq *eraster-collection* "ALL")   ; remembered between calls
 
+;;; Ask the API what actually exists rather than carrying a hardcoded list.
+;;; Returns a list of (name role count scale) sublists, or nil.
+(defun eraster:collections (/ resp lines line parts out)
+  (setq resp (epol:http-get (strcat *epol-api-url* "/rasters/collections")))
+  (if (null resp)
+    nil
+    (progn
+      (setq resp (epol:remove-cr resp))
+      (foreach line (epol:split resp "\n")
+        (if (and line (> (strlen line) 0))
+          (progn
+            (setq parts (epol:split line "|"))
+            (if (>= (length parts) 3)
+              (setq out (cons (list (nth 0 parts) (nth 1 parts)
+                                    (nth 2 parts) (nth 3 parts)) out))
+            )
+          )
+        )
+      )
+      (reverse out)
+    )
+  )
+)
+
 (defun c:ERASTER (/ bbox inp url response lines line parts
                     rpath coll docref scale rms role
-                    lay count skipped roles)
+                    lay count skipped roles
+                    colls names n pick chosen total)
 
   (princ "\n=== Raster Sheets ===")
 
-  ;; --- which collection --------------------------------------------------
-  (princ (strcat "\nCollection [ALL/gys5000/aigialos/historic/fek/dji/de] <"
-                 *eraster-collection* ">: "))
-  (setq inp (getstring))
-  (if (/= inp "") (setq *eraster-collection* inp))
-  (setq coll *eraster-collection*)
+  ;; --- what is catalogued ------------------------------------------------
+  (setq colls (eraster:collections))
+
+  (if (null colls)
+    (progn
+      (princ "\nCannot reach the API, or nothing is catalogued yet.")
+      (princ "\n  API: ")
+      (princ *epol-api-url*)
+      (princ "\n  If the server is up, run:  python ingest_rasters.py "
+             )
+      (princ "--collection <name> --commit")
+      (princ "\n  (dry run is the default - without --commit nothing is written)")
+    )
+    (progn
+      ;; distinct collection names, with a total count each
+      (setq names nil)
+      (foreach c colls
+        (if (not (member (car c) names))
+          (setq names (append names (list (car c))))))
+
+      (princ "\n\n  #  collection      sheets  scale")
+      (princ "\n  -  --------------  ------  ------------")
+      (setq n 0)
+      (foreach nm names
+        (setq n (1+ n)  total 0  scale "")
+        (foreach c colls
+          (if (= (car c) nm)
+            (progn
+              (setq total (+ total (atoi (nth 2 c))))
+              (if (and (nth 3 c) (/= (nth 3 c) "")) (setq scale (nth 3 c)))
+            )
+          )
+        )
+        (princ (strcat "\n  " (itoa n) "  " nm
+                       (substr "                " 1 (max 1 (- 15 (strlen nm))))
+                       (itoa total)
+                       (substr "        " 1 (max 1 (- 8 (strlen (itoa total)))))
+                       scale))
+      )
+      (princ (strcat "\n  0  ALL"))
+
+      ;; --- pick by number, so a typo cannot become a sticky bad default ---
+      (princ (strcat "\n\nCollection number <"
+                     (if (= *eraster-collection* "ALL") "0=ALL"
+                         *eraster-collection*) ">: "))
+      (setq inp (getstring))
+
+      (setq chosen
+        (cond
+          ((= inp "") *eraster-collection*)          ; keep previous
+          ((= inp "0") "ALL")
+          ((and (> (atoi inp) 0) (<= (atoi inp) (length names)))
+           (nth (1- (atoi inp)) names))
+          ((member (strcase inp) (mapcar 'strcase names))
+           (nth (- (length names)
+                   (length (member (strcase inp) (mapcar 'strcase names))))
+                names))
+          ((= (strcase inp) "ALL") "ALL")
+          (T nil)
+        )
+      )
+
+      (if (null chosen)
+        (progn
+          (princ (strcat "\nUnknown collection \"" inp
+                         "\" - pick a number from the list above."))
+          (princ "\n(Previous choice kept: ")
+          (princ *eraster-collection*)
+          (princ ")")
+          (setq chosen nil)
+        )
+        (setq *eraster-collection* chosen)
+      )
+
+      (if chosen (eraster:run chosen))
+    )
+  )
+  (princ)
+)
+
+;;; Second half: roles, bbox, fetch, attach.
+(defun eraster:run (coll / bbox inp url response lines line parts
+                         rpath rcoll docref scale rms role lay
+                         count skipped roles tot)
 
   ;; --- which roles -------------------------------------------------------
   (initget "Working All Context Historical")
@@ -548,6 +651,7 @@
     )
   )
 
+  (princ (strcat "\nCollection: " coll "   roles: " roles))
   (princ "\nSelect area to load sheets...")
   (setq bbox (epol:get-bbox "\nPick first corner: " "\nPick opposite corner: "))
 
@@ -583,26 +687,28 @@
                 (setq parts (epol:split line "|"))
                 (if (>= (length parts) 6)
                   (progn
+                    ;; rcoll is the collection of THIS row - do not shadow the
+                    ;; coll argument, the diagnostics below still need it
                     (setq rpath  (nth 0 parts)
-                          coll   (nth 1 parts)
+                          rcoll  (nth 1 parts)
                           docref (nth 2 parts)
                           scale  (nth 3 parts)
                           rms    (nth 4 parts)
                           role   (nth 5 parts))
 
-                    (setq lay (strcat "R_" (strcase coll)))
+                    (setq lay (strcat "R_" (strcase rcoll)))
                     (if (and docref (/= docref ""))
                       (setq lay (strcat lay "_"
                                   (vl-string-translate "/" "_"
                                     (vl-string-translate " " "_" docref))))
                     )
 
-                    (princ (strcat "\n  " (strcase coll)
+                    (princ (strcat "\n  " (strcase rcoll)
                              (if (and scale (/= scale "")) (strcat "  1:" scale) "")
                              (if (and rms (/= rms "")) (strcat "  RMS " rms "m") "")
                              (if (/= role "working") (strcat "  [" role "]") "")))
 
-                    (if (epol:load-raster rpath coll lay)
+                    (if (epol:load-raster rpath rcoll lay)
                       (setq count (1+ count))
                       (progn
                         (setq skipped (1+ skipped))
@@ -619,10 +725,44 @@
           (princ (strcat "\n\nLoaded " (itoa count) " sheet(s)"))
           (if (> skipped 0)
             (princ (strcat ", " (itoa skipped) " failed/skipped")))
+
+          ;; --- say something useful when nothing came back -----------------
+          ;; Distinguish "this collection is empty" from "nothing here", by
+          ;; asking how many sheets the collection holds in total.
           (if (= count 0)
-            (princ (strcat "\nNothing matched. Try Role=All, or check that "
-                           "ingest_rasters.py has registered the collection.")))
-          (princ ".")
+            (progn
+              (setq tot 0)
+              (foreach c (eraster:collections)
+                (if (or (= (strcase coll) "ALL")
+                        (= (strcase (car c)) (strcase coll)))
+                  (setq tot (+ tot (atoi (nth 2 c))))
+                )
+              )
+              (princ "\n")
+              (if (= tot 0)
+                (progn
+                  (princ (strcat "\nCollection \"" coll
+                                 "\" holds no sheets at all."))
+                  (princ "\nRun:  python ingest_rasters.py --collection ")
+                  (princ coll)
+                  (princ " --commit")
+                  (princ "\n      (dry run is the default - without --commit "
+                         "nothing is written)")
+                )
+                (progn
+                  (princ (strcat "\n\"" coll "\" holds " (itoa tot)
+                                 " sheet(s), but none in this area"))
+                  (if (/= roles "working,context,historical")
+                    (princ (strcat " with role " roles))
+                  )
+                  (princ ".")
+                  (princ "\nEither the area is outside their coverage, or try "
+                         "Role=All.")
+                )
+              )
+            )
+          )
+          (princ)
         )
       )
     )
