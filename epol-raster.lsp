@@ -307,8 +307,13 @@
     (progn
       (princ (strcat "\n  Loading: " img-name))
 
-      ;; Create layer
-      (epol:make-layer layer-name 7)
+      ;; Create layer.
+      ;; epol:make-layer strips anything outside A-Z a-z 0-9 _ - and returns
+      ;; the sanitised name. Use that from here on: CHPROP below takes the name
+      ;; on the command line, where a space reads as Enter and would derail the
+      ;; whole command. Latent since v2.0 - it only bites once a layer name
+      ;; contains a stripped character, e.g. a collection called "sxedio 1867".
+      (setq layer-name (epol:make-layer layer-name 7))
 
       ;; Remember last entity
       (setq lastent (entlast))
