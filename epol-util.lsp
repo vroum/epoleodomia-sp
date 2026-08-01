@@ -121,7 +121,7 @@
   (princ "\n   AIGDRAW  - Existing aigialos/paralia lines in bbox (FEK labels)")
   (princ "\n")
   (princ "\n RASTERS:")
-  (princ "\n   ERASTER  - Any catalogued sheet collection (role-filtered)")
+  (princ "\n   ERASTER  - Any catalogued sheet collection")
   (princ "\n   FEK      - Planning diagram rasters")
   (princ "\n   DJI      - Drone orthophotos")
   (princ "\n   DE       - DE rasters")

@@ -670,18 +670,15 @@
                          rpath rcoll docref scale rms role lay
                          count skipped roles tot)
 
-  ;; --- which roles -------------------------------------------------------
-  (initget "Working All Context Historical")
-  (setq inp (getkword
-              "\nRole [Working/Context/Historical/All] <Working>: "))
-  (setq roles
-    (cond
-      ((= inp "All")        "working,context,historical")
-      ((= inp "Context")    "context")
-      ((= inp "Historical") "historical")
-      (T                    "working")
-    )
-  )
+  ;; --- roles --------------------------------------------------------------
+  ;; The role prompt is switched off for now, while the raster collections are
+  ;; still being imported. Everything except 'excluded' comes back.
+  ;;
+  ;; The column itself stays: 'excluded' is what carries the six blacklisted
+  ;; FEK out of sp_geodata.raster_exclusions, and dropping it would silently
+  ;; re-admit 23 sheets that /rasters/fek/simple has always hidden.
+  ;; To bring the prompt back, restore the getkword block - see git history.
+  (setq roles "working,context,historical")
 
   ;; --- fade -------------------------------------------------------------
   (initget 4)
@@ -689,8 +686,7 @@
                             (itoa *eraster-fade*) ">: ")))
   (if inp (setq *eraster-fade* (if (> inp 90) 90 inp)))
 
-  (princ (strcat "\nCollection: " coll "   roles: " roles
-                 "   fade: " (itoa *eraster-fade*)))
+  (princ (strcat "\nCollection: " coll "   fade: " (itoa *eraster-fade*)))
   (princ "\nSelect area to load sheets...")
   (setq bbox (epol:get-bbox "\nPick first corner: " "\nPick opposite corner: "))
 
@@ -794,13 +790,9 @@
                 )
                 (progn
                   (princ (strcat "\n\"" coll "\" holds " (itoa tot)
-                                 " sheet(s), but none in this area"))
-                  (if (/= roles "working,context,historical")
-                    (princ (strcat " with role " roles))
-                  )
-                  (princ ".")
-                  (princ "\nEither the area is outside their coverage, or try "
-                         "Role=All.")
+                                 " sheet(s), but none in this area."))
+                  (princ "\nThe area is outside their coverage - zoom to a "
+                         "sheet, or pick a different collection.")
                 )
               )
             )
