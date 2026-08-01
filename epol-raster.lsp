@@ -731,11 +731,23 @@
                           rms    (nth 4 parts)
                           role   (nth 5 parts))
 
-                    (setq lay (strcat "R_" (strcase rcoll)))
+                    ;; Layer naming.
+                    ;;
+                    ;; With a document reference, group by it: one FEK covers
+                    ;; several sheets and you want them on one layer, which is
+                    ;; what the FEK command has always done.
+                    ;;
+                    ;; Without one, fall back to nil and let epol:load-raster
+                    ;; name the layer after the file - R_<TYPE>_<filename>,
+                    ;; the same as the old DE and DJI commands. Otherwise every
+                    ;; sheet in the collection lands on a single layer: 309 of
+                    ;; 322 DE rows have no doc_ref, and neither do any of the
+                    ;; GYS 1:5000 sheets.
                     (if (and docref (/= docref ""))
-                      (setq lay (strcat lay "_"
+                      (setq lay (strcat "R_" (strcase rcoll) "_"
                                   (vl-string-translate "/" "_"
                                     (vl-string-translate " " "_" docref))))
+                      (setq lay nil)
                     )
 
                     (princ (strcat "\n  " (strcase rcoll)
@@ -743,7 +755,9 @@
                              (if (and rms (/= rms "")) (strcat "  RMS " rms "m") "")
                              (if (/= role "working") (strcat "  [" role "]") "")))
 
-                    (if (epol:load-raster rpath rcoll lay)
+                    ;; uppercase the type so the fallback yields R_DE_... and
+                    ;; not R_de_..., matching the older commands
+                    (if (epol:load-raster rpath (strcase rcoll) lay)
                       (progn
                         (setq count (1+ count))
                         ;; the freshly attached image is the last entity
