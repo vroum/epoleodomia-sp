@@ -76,7 +76,7 @@ clean/
 ├── sync_kaek_operating.py # Hellenic Cadastre operating parcels sync
 ├── download_rasters.py    # Raster planning diagram downloader
 ├── logger.py              # Local log file generator
-├── sync.bat               # Windows batch file for easy sync
+├── sync_menu.bat          # Windows entry point for all sync jobs
 ├── requirements.txt       # Python dependencies (incl. python-dotenv)
 ├── README.md              # Quick start guide
 ├── DOCUMENTATION.md       # This file
@@ -195,17 +195,16 @@ in a single file. No migration chain needed.
 
 ## 4. How to Sync / Update Data
 
-### Using sync.bat (Recommended)
+### Using sync_menu.bat (Recommended)
 
 ```batch
-sync.bat              # Full sync with change tracking (default)
-sync.bat full         # Same as above
-sync.bat quick        # Quick test - building_blocks only
-sync.bat dry          # Dry run - check counts without loading
-sync.bat rasters      # Download raster planning diagrams only
-sync.bat full-rasters # Full sync + download rasters
-sync.bat replace      # Full replace (no tracking, truncates tables)
-sync.bat help         # Show help
+sync_menu.bat              # Interactive menu
+sync_menu.bat tee          # TEE epoleodomia tables
+sync_menu.bat ktima        # Operating cadastre
+sync_menu.bat ydro         # EMSY ydrolipsies
+sync_menu.bat rasters      # Raster downloads
+sync_menu.bat all          # TEE + cadastre + ydrolipsies
+sync_menu.bat all-rasters  # All + rasters
 ```
 
 ### Using Python Directly

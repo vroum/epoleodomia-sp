@@ -332,7 +332,7 @@ class SyncLogger:
         with open(digest_path, 'w', encoding='utf-8') as f:
             f.write(digest + "\n")
 
-        # Console echo — the part the user actually reads after sync.bat
+        # Console echo — the summary the user reads after a tracked sync
         print("\n" + "=" * 60)
         print("ΤΙ ΑΛΛΑΞΕ (CHANGES_latest.md)")
         print("=" * 60)
