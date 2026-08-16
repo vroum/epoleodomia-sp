@@ -10,9 +10,13 @@ network call is wrapped and failures produce a clear message, never a crash.
 Data is in EGSA'87 (wkid 2100) — no reprojection needed.
 
 Usage:
-    python sync_ydrolipsies.py             # sync Spetses bbox (full replace)
+    python sync_ydrolipsies.py             # sync Spetses bbox (incremental upsert)
     python sync_ydrolipsies.py --dry-run   # fetch + report count only
     python sync_ydrolipsies.py --bbox minx,miny,maxx,maxy
+
+Rows missing from a later source response are deliberately kept. The endpoint
+is unofficial, so a partial/empty response must never erase previously synced
+data.
 """
 
 import argparse
@@ -54,6 +58,49 @@ CREATE TABLE IF NOT EXISTS sp_geodata.ydrolipsies_emsy (
 );
 CREATE INDEX IF NOT EXISTS idx_ydrolipsies_emsy_geom
     ON sp_geodata.ydrolipsies_emsy USING gist (geom);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_ydrolipsies_emsy_objectid
+    ON sp_geodata.ydrolipsies_emsy (objectid);
+"""
+
+
+UPSERT_SQL = f"""
+INSERT INTO {TABLE} AS dst
+    (objectid, kwdikos_emsy, kwdikos_sy, eidos_sy,
+     kathestws_xrhshs, idioktisiako, x_egsa87, y_egsa87, z,
+     bathos_gewtrhshs, topwnymio, koinothta, paratiriseis,
+     status, geom)
+VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+        ST_SetSRID(ST_Point(%s, %s), 2100))
+ON CONFLICT (objectid) DO UPDATE SET
+    kwdikos_emsy     = EXCLUDED.kwdikos_emsy,
+    kwdikos_sy       = EXCLUDED.kwdikos_sy,
+    eidos_sy         = EXCLUDED.eidos_sy,
+    kathestws_xrhshs = EXCLUDED.kathestws_xrhshs,
+    idioktisiako     = EXCLUDED.idioktisiako,
+    x_egsa87         = EXCLUDED.x_egsa87,
+    y_egsa87         = EXCLUDED.y_egsa87,
+    z                = EXCLUDED.z,
+    bathos_gewtrhshs = EXCLUDED.bathos_gewtrhshs,
+    topwnymio        = EXCLUDED.topwnymio,
+    koinothta        = EXCLUDED.koinothta,
+    paratiriseis     = EXCLUDED.paratiriseis,
+    status           = EXCLUDED.status,
+    geom             = EXCLUDED.geom,
+    synced_at        = NOW()
+WHERE ROW(
+    dst.kwdikos_emsy, dst.kwdikos_sy, dst.eidos_sy,
+    dst.kathestws_xrhshs, dst.idioktisiako,
+    dst.x_egsa87, dst.y_egsa87, dst.z,
+    dst.bathos_gewtrhshs, dst.topwnymio, dst.koinothta,
+    dst.paratiriseis, dst.status, dst.geom
+) IS DISTINCT FROM ROW(
+    EXCLUDED.kwdikos_emsy, EXCLUDED.kwdikos_sy, EXCLUDED.eidos_sy,
+    EXCLUDED.kathestws_xrhshs, EXCLUDED.idioktisiako,
+    EXCLUDED.x_egsa87, EXCLUDED.y_egsa87, EXCLUDED.z,
+    EXCLUDED.bathos_gewtrhshs, EXCLUDED.topwnymio, EXCLUDED.koinothta,
+    EXCLUDED.paratiriseis, EXCLUDED.status, EXCLUDED.geom
+)
+RETURNING objectid;
 """
 
 
@@ -119,30 +166,40 @@ def fetch_features(bbox):
 def load(features, dry_run=False):
     if dry_run:
         print(f"  [dry-run] {len(features)} σημεία υδροληψίας στο bbox")
-        return 0
+        print("  [dry-run] Η βάση δεν αλλάζει")
+        return {"new": 0, "updated": 0, "unchanged": 0,
+                "skipped": 0, "total": None}
 
     conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute(DDL)
-            cur.execute(f"TRUNCATE {TABLE} RESTART IDENTITY")
-            n = 0
+
+            source_objectids = [
+                f.get("attributes", {}).get("OBJECTID")
+                for f in features
+                if f.get("attributes", {}).get("OBJECTID") is not None
+            ]
+            existing_objectids = set()
+            if source_objectids:
+                cur.execute(
+                    f"SELECT objectid FROM {TABLE} WHERE objectid = ANY(%s)",
+                    (source_objectids,),
+                )
+                existing_objectids = {row[0] for row in cur.fetchall()}
+
+            stats = {"new": 0, "updated": 0, "unchanged": 0, "skipped": 0}
             for f in features:
                 a = f.get("attributes", {})
                 g = f.get("geometry") or {}
+                objectid = a.get("OBJECTID")
                 x, y = g.get("x"), g.get("y")
-                if x is None or y is None:
+                if objectid is None or x is None or y is None:
+                    stats["skipped"] += 1
                     continue
-                cur.execute(f"""
-                    INSERT INTO {TABLE}
-                        (objectid, kwdikos_emsy, kwdikos_sy, eidos_sy,
-                         kathestws_xrhshs, idioktisiako, x_egsa87, y_egsa87, z,
-                         bathos_gewtrhshs, topwnymio, koinothta, paratiriseis,
-                         status, geom)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                            ST_SetSRID(ST_Point(%s, %s), 2100))
-                """, (
-                    a.get("OBJECTID"), a.get("KWDIKOS_EMSY"), a.get("KWDIKOS_SY"),
+
+                cur.execute(UPSERT_SQL, (
+                    objectid, a.get("KWDIKOS_EMSY"), a.get("KWDIKOS_SY"),
                     a.get("EIDOS_SY"), a.get("KATHESTWS_XRHSHS"),
                     a.get("IDIOKTHSIAKO_KATHESTWS"),
                     a.get("X_EGSA87"), a.get("Y_EGSA87"), a.get("Z"),
@@ -150,9 +207,20 @@ def load(features, dry_run=False):
                     a.get("KOINOTHTA"), a.get("PARATHRHSEIS"), a.get("STATUS"),
                     x, y,
                 ))
-                n += 1
+                changed = cur.fetchone()
+                if changed:
+                    if objectid in existing_objectids:
+                        stats["updated"] += 1
+                    else:
+                        stats["new"] += 1
+                        existing_objectids.add(objectid)
+                else:
+                    stats["unchanged"] += 1
+
+            cur.execute(f"SELECT COUNT(*) FROM {TABLE}")
+            stats["total"] = cur.fetchone()[0]
         conn.commit()
-        return n
+        return stats
     finally:
         conn.close()
 
@@ -186,13 +254,18 @@ def main():
     print(f"  Fetched: {len(features)} σημεία")
 
     try:
-        n = load(features, dry_run=args.dry_run)
+        stats = load(features, dry_run=args.dry_run)
     except psycopg2.Error as e:
         print(f"\nDB ERROR: {e}")
         sys.exit(1)
 
     if not args.dry_run:
-        print(f"  Loaded: {n} → {TABLE} (full replace)")
+        print(f"  New: {stats['new']}")
+        print(f"  Updated: {stats['updated']}")
+        print(f"  Unchanged: {stats['unchanged']}")
+        if stats["skipped"]:
+            print(f"  Skipped (missing OBJECTID/geometry): {stats['skipped']}")
+        print(f"  Table total: {stats['total']} → {TABLE} (no deletions)")
     print("Done.")
 
 
