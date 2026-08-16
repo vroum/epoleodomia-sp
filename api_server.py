@@ -1518,7 +1518,7 @@ def _get_oroitable_data(x: float, y: float) -> dict:
         "loipa": [],                     # Λοιπά remarks from DB
         "loipoi_periorismoi": "ΦΕΚ 740Δ'/1981, ΓΟΚ 85/2000, ΝΟΚ 2012",  # Hardcoded
         "kata_parekklisi": None,         # Exception rules
-        "plimmyra": "Η δόμηση επιτρέπεται σε απόσταση 10μ. από τις πιθανές γραμμές πλημμύρας (Ν.4258/2014 αρθ.9 παρ.4Α — εκκρεμεί ΦΕΚ οριοθέτησης)",  # Hardcoded
+        "plimmyra": "Η δόμηση επιτρέπεται σε απόσταση 10μ. από τις γραμμές πλημμύρας (Ν.4258/2014 αρθ.9 παρ.4Α — εκκρεμεί ΦΕΚ οριοθέτησης)",  # Hardcoded
     }
 
     # 0. Get OT number from building_blocks
