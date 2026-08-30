@@ -287,12 +287,36 @@ def sync_layer(conn, table: str, service: str):
         # Diff old vs new before the swap (None on first run)
         diff = _diff_before_swap(cur, table, tmp, qualified)
 
-        cur.execute(f'DROP TABLE IF EXISTS {qualified}')
+        # Views on the old table block DROP TABLE. Save their definitions,
+        # drop with CASCADE, recreate after the swap — same transaction, so
+        # a failure rolls everything back (views included).
+        cur.execute("""
+            SELECT DISTINCT n.nspname, c.relname,
+                   pg_get_viewdef(c.oid, true),
+                   obj_description(c.oid, 'pg_class')
+            FROM pg_depend d
+            JOIN pg_rewrite r  ON r.oid = d.objid
+            JOIN pg_class c    ON c.oid = r.ev_class
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE d.refobjid = to_regclass(%s) AND c.relkind = 'v'
+              AND c.oid <> d.refobjid
+        """, (qualified,))
+        dep_views = cur.fetchall()
+        if dep_views:
+            names = ", ".join(f"{s}.{v}" for s, v, _, _ in dep_views)
+            print(f"  dependent views (will be recreated): {names}")
+
+        cur.execute(f'DROP TABLE IF EXISTS {qualified} CASCADE')
         cur.execute(f'ALTER TABLE {tmp} RENAME TO {table}_renaming')
         cur.execute(f'ALTER TABLE {SCHEMA}."{table}_renaming" RENAME TO "{table}"')
         cur.execute(f'CREATE INDEX ON {qualified} USING gist (geom)')
         if "kaek" in cols:
             cur.execute(f'CREATE INDEX ON {qualified} (kaek)')
+
+        for vschema, vname, vdef, vcomment in dep_views:
+            cur.execute(f'CREATE VIEW "{vschema}"."{vname}" AS {vdef}')
+            if vcomment:
+                cur.execute(f'COMMENT ON VIEW "{vschema}"."{vname}" IS %s', (vcomment,))
     conn.commit()
     print(f"  loaded into {qualified}")
     return True, diff
@@ -302,11 +326,11 @@ def report_diff(conn):
     sql = f"""
     SELECT
       (SELECT count(*) FROM {SCHEMA}.kaek_parcels_operating)            AS operating,
-      (SELECT count(*) FROM {SCHEMA}.kaek_parcels_autocad)              AS anartisi_1i,
+      (SELECT count(*) FROM {SCHEMA}.kaek_parcels_anartisi)              AS anartisi_1i,
       (SELECT count(*) FROM {SCHEMA}.kaek_parcels_operating o
-         LEFT JOIN {SCHEMA}.kaek_parcels_autocad a USING (kaek)
+         LEFT JOIN {SCHEMA}.kaek_parcels_anartisi a USING (kaek)
          WHERE a.kaek IS NULL)                                          AS new_kaek,
-      (SELECT count(*) FROM {SCHEMA}.kaek_parcels_autocad a
+      (SELECT count(*) FROM {SCHEMA}.kaek_parcels_anartisi a
          LEFT JOIN {SCHEMA}.kaek_parcels_operating o USING (kaek)
          WHERE o.kaek IS NULL)                                          AS dropped_kaek
     """
