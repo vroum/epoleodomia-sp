@@ -5,6 +5,8 @@
 -- Run AFTER 001_tables.sql and AFTER first data sync
 -- ============================================================================
 
+-- HISTORICAL DEFINITIONS: superseded by sql/migrations/0002_live_tee_contract.sql.
+-- Do not replay against the current installation. Use database_setup.py preview.
 SET search_path TO epoleodomia, public;
 
 -- ============================================================================

@@ -1,37 +1,29 @@
 @echo off
+setlocal DisableDelayedExpansion
 title Spetses GIS API Server
-
-:: Kill any existing process on port 8000
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8000 ^| findstr LISTENING') do (
-    echo Killing existing process on port 8000 (PID: %%a)
-    taskkill /PID %%a /F >nul 2>&1
-)
 
 :: Change to script directory
 cd /d "%~dp0"
 
-:: Load credentials from .env (lines starting with ; are comments)
-:: NOTE: do not enable delayed expansion - passwords may contain ! characters
-if not exist ".env" (
-    echo ERROR: .env file not found. Copy .env.example to .env and fill in credentials.
-    pause
-    exit /b 1
-)
-for /f "usebackq tokens=1,* delims==" %%a in (".env") do set "%%a=%%b"
-
-if "%EPOL_DB_PASSWORD%"=="" (
-    echo ERROR: EPOL_DB_PASSWORD is not set in .env
+:: Python owns .env parsing and environment precedence, including special characters.
+set "EPOL_PYTHON=python"
+if exist ".venv\Scripts\python.exe" set "EPOL_PYTHON=%~dp0.venv\Scripts\python.exe"
+"%EPOL_PYTHON%" -c "from settings import SETTINGS; SETTINGS.database.require_password()"
+if errorlevel 1 (
+    echo ERROR: Check Python and the project database settings.
     pause
     exit /b 1
 )
 
 echo.
 echo ============================================================
-echo   Starting Spetses GIS API Server
+echo   Spetses GIS API Server
 echo ============================================================
 echo.
 
-:: Start the server
-python api_server.py
+:: Start the server, or recognize the healthy API already on its configured port.
+"%EPOL_PYTHON%" api_server.py
+set "EPOL_SERVER_RESULT=%ERRORLEVEL%"
 
 pause
+exit /b %EPOL_SERVER_RESULT%

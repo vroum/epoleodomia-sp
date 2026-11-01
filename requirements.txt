@@ -6,17 +6,11 @@ requests>=2.28.0
 # PostgreSQL database adapter
 psycopg2-binary>=2.9.0
 
-# Environment variable loading from .env files
-python-dotenv>=1.0.0
-
 # Progress bars for raster downloads
 tqdm>=4.64.0
 
-# Raster metadata extraction (resolution, CRS, bbox, data footprint).
-# NOT optional: download_rasters.py wraps its rasterio import in
-# `except ImportError: pass`, so without this installed it silently records
-# NULL bbox/resolution and still reports success. ingest_rasters.py fails
-# loudly instead.
+# Required for raster validation/metadata and ingestion. Downloads fail clearly
+# without rasterio; incomplete, wrong-CRS and unsupported rasters are rejected.
 rasterio>=1.3.0
 
 # Optional, for ingest_rasters.py: derives the valid-data footprint of a warped

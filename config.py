@@ -4,23 +4,7 @@ Configuration for TEE ArcGIS REST Services data sync to PostGIS
 v1.1 — Credentials loaded from .env file (never committed to source control)
 """
 
-import os
-from pathlib import Path
-
-# Load .env file. Supports both "#" and ";" comment styles because the batch
-# launchers use semicolon comments.
-def load_env(path: Path):
-    if not path.exists():
-        return
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith(("#", ";")) or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        os.environ.setdefault(key.strip(), value.strip())
-
-
-load_env(Path(__file__).parent / ".env")
+from settings import SETTINGS
 
 # ---------------------------------------------------------------------------
 # Spetses bounding box in EPSG:2100 (GGRS87)
@@ -36,22 +20,7 @@ SPETSES_BBOX = {
 # ---------------------------------------------------------------------------
 # Database connection — reads from environment / .env
 # ---------------------------------------------------------------------------
-DATABASE = {
-    "host": os.environ.get("DB_HOST") or os.environ.get("EPOL_DB_HOST", "10.90.144.153"),
-    "port": int(os.environ.get("DB_PORT") or os.environ.get("EPOL_DB_PORT", 65432)),
-    "database": os.environ.get("DB_NAME") or os.environ.get("EPOL_DB_NAME", "gis"),
-    "user": os.environ.get("DB_USER") or os.environ.get("EPOL_DB_USER", "docker"),
-    "password": os.environ.get("DB_PASSWORD") or os.environ.get("EPOL_DB_PASSWORD", ""),
-    "schema": os.environ.get("DB_SCHEMA") or os.environ.get("EPOL_DB_SCHEMA", "epoleodomia"),
-}
-
-# Quick sanity check at import time
-if not DATABASE["password"]:
-    import warnings
-    warnings.warn(
-        "Database password is empty. Set DB_PASSWORD or EPOL_DB_PASSWORD in .env/environment.",
-        stacklevel=2,
-    )
+DATABASE = dict(SETTINGS.database.connection_kwargs(), schema=SETTINGS.database.schema)
 
 # ---------------------------------------------------------------------------
 # Base URLs for ArcGIS REST services

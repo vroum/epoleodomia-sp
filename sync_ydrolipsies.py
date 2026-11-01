@@ -13,6 +13,8 @@ Usage:
     python sync_ydrolipsies.py             # sync Spetses bbox (incremental upsert)
     python sync_ydrolipsies.py --dry-run   # fetch + report count only
     python sync_ydrolipsies.py --bbox minx,miny,maxx,maxy
+    python sync_ydrolipsies.py --init       # preview setup; no source download
+    python sync_ydrolipsies.py --init --apply  # explicit administrator setup
 
 Rows missing from a later source response are deliberately kept. The endpoint
 is unofficial, so a partial/empty response must never erase previously synced
@@ -21,18 +23,29 @@ data.
 
 import argparse
 import json
-import os
+import math
 import sys
 from datetime import datetime
 
 import psycopg2
-import requests
+
+from arcgis_client import fetch_count, fetch_object_ids, request_json
+from config import DATABASE
+from sync_safety import FetchError, LoadError, SyncError
 
 SERVICE_URL = ("http://lmt.ypeka.gr/arcgis/rest/services/EMSIes/"
                "Idrolipsies_for_map_symbol_Service/FeatureServer/0/query")
 
 # Spetses bbox (EGSA'87) — same as the cadastre sync
 DEFAULT_BBOX = (416555, 4116249, 431409, 4129267)
+PAGE = 1000
+TIMEOUT = 60
+SOURCE = "EMSY (unofficial viewer endpoint)"
+ATTRIBUTES = (
+    "OBJECTID", "KWDIKOS_EMSY", "KWDIKOS_SY", "EIDOS_SY", "KATHESTWS_XRHSHS",
+    "IDIOKTHSIAKO_KATHESTWS", "X_EGSA87", "Y_EGSA87", "Z", "BATHOS_GEWTRHSHS",
+    "TOPWNYMIO", "KOINOTHTA", "PARATHRHSEIS", "STATUS",
+)
 
 TABLE = 'sp_geodata.ydrolipsies_emsy'
 
@@ -106,75 +119,140 @@ RETURNING objectid;
 
 def get_connection():
     return psycopg2.connect(
-        host=os.environ.get("EPOL_DB_HOST", "10.90.144.153"),
-        port=int(os.environ.get("EPOL_DB_PORT", "65432")),
-        dbname=os.environ.get("EPOL_DB_NAME", "gis"),
-        user=os.environ.get("EPOL_DB_USER", "docker"),
-        password=os.environ.get("EPOL_DB_PASSWORD", ""),
+        host=DATABASE["host"], port=DATABASE["port"], dbname=DATABASE["database"],
+        user=DATABASE["user"], password=DATABASE["password"],
     )
 
 
-def fetch_features(bbox):
-    """Fetch all features in bbox with paging. Returns list or raises RuntimeError."""
-    features = []
-    offset = 0
-    page = 1000  # server maxRecordCount
-    geometry = json.dumps({
+def initialize_schema():
+    """Explicit administrative setup; normal loads never create objects."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(DDL)
+        conn.commit()
+    except Exception as exc:
+        conn.rollback()
+        raise LoadError(f'EMSY setup rolled back: {exc}') from exc
+    finally:
+        conn.close()
+
+
+def _finite_number(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+def validate_bbox(bbox):
+    if not isinstance(bbox, (list, tuple)) or len(bbox) != 4 or not all(map(_finite_number, bbox)):
+        raise ValueError("bbox requires four finite coordinates")
+    if bbox[0] >= bbox[2] or bbox[1] >= bbox[3]:
+        raise ValueError("bbox minima must be smaller than maxima")
+    return tuple(bbox)
+
+
+def _query_params(bbox):
+    bbox = validate_bbox(bbox)
+    return {"f": "json", "where": "1=1", "geometry": json.dumps({
         "xmin": bbox[0], "ymin": bbox[1], "xmax": bbox[2], "ymax": bbox[3],
         "spatialReference": {"wkid": 2100},
-    })
-    while True:
-        params = {
-            "f": "json",
-            "geometry": geometry,
-            "geometryType": "esriGeometryEnvelope",
-            "spatialRel": "esriSpatialRelIntersects",
-            "inSR": 2100,
-            "outSR": 2100,
-            "outFields": "*",
-            "returnGeometry": "true",
-            "resultOffset": offset,
-            "resultRecordCount": page,
-        }
+    }), "geometryType": "esriGeometryEnvelope", "spatialRel": "esriSpatialRelIntersects", "inSR": 2100}
+
+
+def _require_egsa87(reference):
+    if not isinstance(reference, dict) or not any(k in reference for k in ("wkid", "latestWkid")):
+        raise SyncError("EMSY: missing spatial reference; expected EPSG:2100")
+    if any(reference[k] != 2100 for k in ("wkid", "latestWkid") if k in reference):
+        raise SyncError("EMSY: unexpected spatial reference; expected EPSG:2100")
+
+
+def _validate_features(features, spatial_reference=None, bbox=None):
+    """Validate all records before writing; nullable values must still have keys."""
+    if not isinstance(features, list):
+        raise SyncError("EMSY: missing/invalid features list")
+    normalized, seen = [], set()
+    for index, feat in enumerate(features, 1):
+        attrs = feat.get("attributes") if isinstance(feat, dict) else None
+        geom = feat.get("geometry") if isinstance(feat, dict) else None
+        if not isinstance(attrs, dict) or not isinstance(geom, dict):
+            raise SyncError(f"EMSY record {index}: missing attributes/point geometry")
+        missing = [name for name in ATTRIBUTES if name not in attrs]
+        if missing:
+            raise SyncError(f"EMSY record {index}: missing source fields {missing}")
+        oid = attrs["OBJECTID"]
+        if isinstance(oid, bool) or not isinstance(oid, int) or oid in seen:
+            raise SyncError(f"EMSY record {index}: missing/invalid/duplicate OBJECTID")
+        seen.add(oid)
+        for axis in ("x", "y"):
+            value = geom.get(axis)
+            if not _finite_number(value):
+                raise SyncError(f"EMSY record {index}: missing/non-finite point {axis}")
+        if any(key in geom for key in ("rings", "paths", "points")):
+            raise SyncError(f"EMSY record {index}: expected point geometry")
+        reference = geom.get("spatialReference", spatial_reference)
+        _require_egsa87(reference)
+        if bbox and not (bbox[0] <= geom["x"] <= bbox[2] and bbox[1] <= geom["y"] <= bbox[3]):
+            raise SyncError(f"EMSY record {index}: point outside requested bbox")
+        item = dict(feat)
+        item["attributes"] = dict(attrs)
+        item["geometry"] = dict(geom, spatialReference=dict(reference))
+        normalized.append(item)
+    return normalized
+
+
+def fetch_features(bbox):
+    """Verify the entire source identity snapshot; never return a partial import."""
+    params = _query_params(bbox)
+    expected_count = fetch_count(SERVICE_URL, params, TIMEOUT, SOURCE)
+    name, expected_ids = fetch_object_ids(SERVICE_URL, params, TIMEOUT, SOURCE)
+    if name != "OBJECTID" or len(expected_ids) != expected_count:
+        raise FetchError("EMSY: source count/object-ID field or membership mismatch")
+    remaining, features = set(expected_ids), []
+    while remaining:
+        requested = set(sorted(remaining)[:PAGE])
+        batch_params = dict(params, objectIds=",".join(str(i) for i in sorted(requested)),
+                            outSR=2100, outFields=",".join(ATTRIBUTES), returnGeometry="true",
+                            maxAllowableOffset="0", resultRecordCount=PAGE)
+        data = request_json(SERVICE_URL, batch_params, TIMEOUT, SOURCE, method="POST")
         try:
-            r = requests.get(SERVICE_URL, params=params, timeout=60)
-            r.raise_for_status()
-            data = r.json()
-        except requests.exceptions.RequestException as e:
-            raise RuntimeError(
-                f"ΕΜΣΥ endpoint unreachable ({e.__class__.__name__}: {e}).\n"
-                "  Το endpoint είναι ανεπίσημο (internal service του viewer του ΥΠΕΝ) —\n"
-                "  μπορεί να άλλαξε ή να κλειδώθηκε. Έλεγξε το URL στον browser:\n"
-                f"  {SERVICE_URL}?f=json")
-        except ValueError:
-            raise RuntimeError(
-                "ΕΜΣΥ endpoint returned non-JSON (πιθανό HTML error page) — "
-                "το service ίσως άλλαξε μορφή. Έλεγξε το URL στον browser.")
-
-        if "error" in data:
-            raise RuntimeError(f"ΕΜΣΥ ArcGIS error: {data['error']}")
-
-        batch = data.get("features", [])
+            if data.get("geometryType") != "esriGeometryPoint":
+                raise SyncError("EMSY: expected point feature set")
+            reference = data.get("spatialReference")
+            _require_egsa87(reference)
+            batch = _validate_features(data.get("features"), reference, bbox)
+        except SyncError as exc:
+            raise FetchError(str(exc)) from exc
+        if not batch:
+            raise FetchError(f"EMSY: incomplete download ({len(features)}/{expected_count})")
+        received = {feat["attributes"]["OBJECTID"] for feat in batch}
+        if not received <= requested:
+            raise FetchError("EMSY: received unexpected or already downloaded object IDs")
+        remaining.difference_update(received)
         features.extend(batch)
-        if not data.get("exceededTransferLimit") or not batch:
-            break
-        offset += len(batch)
-
+    final_name, final_ids = fetch_object_ids(SERVICE_URL, params, TIMEOUT, SOURCE)
+    if final_name != name or final_ids != expected_ids:
+        raise FetchError("EMSY: source object IDs changed during download; rerun the sync")
     return features
 
 
 def load(features, dry_run=False):
+    features = _validate_features(features)
     if dry_run:
         print(f"  [dry-run] {len(features)} σημεία υδροληψίας στο bbox")
         print("  [dry-run] Η βάση δεν αλλάζει")
         return {"new": 0, "updated": 0, "unchanged": 0,
                 "skipped": 0, "total": None}
 
+    if not features:
+        return {"new": 0, "updated": 0, "unchanged": 0, "skipped": 0, "total": None}
+
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute(DDL)
-
             source_objectids = [
                 f.get("attributes", {}).get("OBJECTID")
                 for f in features
@@ -194,10 +272,6 @@ def load(features, dry_run=False):
                 g = f.get("geometry") or {}
                 objectid = a.get("OBJECTID")
                 x, y = g.get("x"), g.get("y")
-                if objectid is None or x is None or y is None:
-                    stats["skipped"] += 1
-                    continue
-
                 cur.execute(UPSERT_SQL, (
                     objectid, a.get("KWDIKOS_EMSY"), a.get("KWDIKOS_SY"),
                     a.get("EIDOS_SY"), a.get("KATHESTWS_XRHSHS"),
@@ -221,6 +295,11 @@ def load(features, dry_run=False):
             stats["total"] = cur.fetchone()[0]
         conn.commit()
         return stats
+    except Exception as exc:
+        conn.rollback()
+        hint = (' Review sync_ydrolipsies.py --init with the schema administrator.'
+                if isinstance(exc, psycopg2.errors.UndefinedTable) else '')
+        raise LoadError(f"EMSY load rolled back: {exc}{hint}") from exc
     finally:
         conn.close()
 
@@ -229,15 +308,33 @@ def main():
     ap = argparse.ArgumentParser(description="Sync ΕΜΣΥ υδροληψίες → PostGIS")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--bbox", type=str, help="minx,miny,maxx,maxy (EGSA'87)")
+    ap.add_argument("--init", action="store_true", help="Preview administrative table/index setup without fetching data")
+    ap.add_argument("--apply", action="store_true", help="Apply setup only with --init and owner credentials")
     args = ap.parse_args()
+    if args.apply and not args.init:
+        ap.error('--apply requires --init; ordinary sync does not do schema setup')
+    if args.init:
+        if args.dry_run or args.bbox:
+            ap.error('--init is standalone; do not combine it with data-sync options')
+        if not args.apply:
+            print(DDL)
+            print('Preview only. An administrator may apply with --init --apply.')
+            return
+        try:
+            initialize_schema()
+        except (psycopg2.Error, SyncError) as exc:
+            print(f'DB SETUP ERROR: {exc}')
+            sys.exit(1)
+        print('EMSY schema setup completed. No source data fetched.')
+        return
 
     bbox = DEFAULT_BBOX
     if args.bbox:
         try:
             bbox = tuple(float(v) for v in args.bbox.split(","))
-            assert len(bbox) == 4
-        except (ValueError, AssertionError):
-            print("Invalid --bbox. Expected: minx,miny,maxx,maxy")
+            bbox = validate_bbox(bbox)
+        except ValueError as exc:
+            print(f"Invalid --bbox: {exc}. Expected: minx,miny,maxx,maxy")
             sys.exit(2)
 
     print("=" * 60)
@@ -255,7 +352,7 @@ def main():
 
     try:
         stats = load(features, dry_run=args.dry_run)
-    except psycopg2.Error as e:
+    except (psycopg2.Error, SyncError) as e:
         print(f"\nDB ERROR: {e}")
         sys.exit(1)
 
@@ -265,7 +362,10 @@ def main():
         print(f"  Unchanged: {stats['unchanged']}")
         if stats["skipped"]:
             print(f"  Skipped (missing OBJECTID/geometry): {stats['skipped']}")
-        print(f"  Table total: {stats['total']} → {TABLE} (no deletions)")
+        if stats["total"] is None:
+            print("  Empty source: existing data kept; no database writes")
+        else:
+            print(f"  Table total: {stats['total']} → {TABLE} (no deletions)")
     print("Done.")
 
 

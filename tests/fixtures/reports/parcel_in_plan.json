@@ -1,0 +1,37 @@
+{
+  "description": "Synthetic parcel: shoreline approval, partial forest ratification, pending flood line and an inside EMSY point.",
+  "mode": "parcel",
+  "point": [420000, 4120000],
+  "parcel": {"kaek": "000000000001", "area_m2": 350.0, "perim_m": 80.0, "main_use": "0000", "descr": ""},
+  "oroi": {
+    "found": true, "ot_num": "TEST", "xriseis": "TEST USE",
+    "diatagmata_entaxis": ["TEST ENTRY FEK"], "diatagmata_oron": ["TEST REGS FEK"],
+    "tomeis": [{"name": "A", "elax_embado_m2": 300, "elax_prosop_m": 12,
+      "coverage_pct": 50, "oik_systima": "TEST SYSTEM", "sd": 0.8,
+      "max_height_m": 7.5, "num_orofon": 2}],
+    "egkriseis": ["Συμβούλιο Αρχιτεκτονικής", "Υπηρεσία Νεωτέρων Μνημείων"],
+    "loipoi_periorismoi": "TEST LIMITATION", "loipa": ["TEST REMARK"],
+    "plimmyra": "TEST PENDING FLOOD NOTE", "kata_parekklisi": null
+  },
+  "rights": {"apokleistikes": [{"area_m2": 100.0}, {"area_m2": 150.0}], "douleies": [{"area_m2": 10.0}]},
+  "shore": {"found": true, "lines": [
+    {"info": "Γραμμή Παραλίας", "distance_m": 0.0, "fek": "TEST-BEACH"},
+    {"info": "Γραμμή Αιγιαλού", "distance_m": 35.0, "fek": "TEST-CURRENT"},
+    {"info": "Γραμμή Αιγιαλού_ΠΟΑ", "distance_m": 12.0, "fek": "TEST-POA"}
+  ]},
+  "overlaps": {
+    "natura": [{"name": "TEST NATURA", "code": "TEST001", "pct": 25.0}],
+    "forest": [{"source": "ανάρτηση 2021", "label": "Δάσος/Δασική έκταση", "category": "δασικό", "pct": 97.5}],
+    "forest_kyromenos_pct": 0.3, "archeo_zones": [{"name": "TEST ZONE", "pct": 12.5}]
+  },
+  "archeo": {"found": true, "name": "TEST MONUMENT", "ot": "TEST OT", "distance_m": 0.0},
+  "church": {"found": true, "name": "TEST CHURCH", "type": "TEST TYPE", "distance_m": 5.0},
+  "remata": {"oikismos_lines": [
+    {"layer": "Υδρογραφική Γραμμή Πλημμυρας", "label": "Πιθανή Γρ. Πλημμύρας", "distance_m": 0.0},
+    {"layer": "Γραμμή Οριοθέτησης με έργο", "label": "TEST UNRATIFIED DELIMITATION", "distance_m": 5.0}
+  ], "tps_found": true, "tps_distance_m": 12.0, "other_found": false},
+  "ydro": {"available": true,
+    "inside": [{"eidos": "Πηγάδι", "status": "Ενεργό", "emsy": "TEST-EMSY"}],
+    "nearest": {"eidos": "TEST NEAREST", "distance_m": 0.0}},
+  "inside_plan": true
+}

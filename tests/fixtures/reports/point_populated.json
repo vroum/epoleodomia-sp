@@ -1,0 +1,33 @@
+{
+  "description": "Synthetic point with protection features, stepped FAR, an exception, provisional flood line and a nearest EMSY point.",
+  "mode": "point", "point": [420000, 4120000], "parcel": null,
+  "oroi": {
+    "found": true, "ot_num": "TEST POINT", "xriseis": "TEST USE",
+    "diatagmata_entaxis": [], "diatagmata_oron": [],
+    "tomeis": [{"name": "B", "elax_embado_m2": 400, "coverage_pct": 35,
+      "sd": 0.6, "sd_klimakotos": "TEST STEPS"}],
+    "egkriseis": [], "loipoi_periorismoi": null, "loipa": ["", "TEST REMARK"],
+    "plimmyra": null,
+    "kata_parekklisi": {"date": "TEST DATE", "remarks": "TEST EXCEPTION", "fek": "TEST-EXCEPTION"}
+  },
+  "shore": {"found": true, "lines": [
+    {"info": "Γραμμή Παλαιού Αιγιαλού", "distance_m": 30.0, "fek": "TEST-OLD"},
+    {"info": "Γραμμή Παραλίας_ΠΟΑ", "distance_m": 8.0, "fek": null},
+    {"info": "Γραμμή Αιγιαλού", "distance_m": 25.0, "fek": "TEST-CURRENT"},
+    {"info": "Γραμμή Παραλίας", "distance_m": 10.0, "fek": "TEST-BEACH"},
+    {"info": "Γραμμή Αιγιαλού_ΠΟΑ", "distance_m": 12.0, "fek": null}
+  ]},
+  "archeo": {"found": true, "in_protection_zone": true, "zone_name": "TEST ZONE",
+    "name": "TEST MONUMENT", "ot": "TEST OT", "distance_m": 8.0},
+  "church": {"found": true, "name": "TEST CHURCH", "type": null, "distance_m": 15.0},
+  "natura": {"in_natura": true, "natura_name": "TEST NATURA", "natura_code": "TEST001",
+    "in_forest": true, "forest_type": "ΔΔ", "forest_type_label": "Δάσος",
+    "forest_category": "δασικό", "forest_source": "ανάρτηση 2021", "kaek_forest_use": "TEST FOREST USE"},
+  "remata": {"oikismos_lines": [
+    {"layer": "Γραμμή Οριοθέτησης με έργο", "label": "TEST UNRATIFIED DELIMITATION", "distance_m": 5.0},
+    {"layer": "Υδρογραφική Γραμμή Πλημμυρας", "label": "Πιθανή Γρ. Πλημμύρας", "distance_m": 6.0}
+  ], "tps_found": false, "other_found": true, "other_distance_m": 20.0},
+  "ydro": {"available": true, "inside": [], "nearest": {
+    "eidos": null, "status": null, "emsy": "TEST-NEAR", "distance_m": 35.0}},
+  "inside_plan": true
+}

@@ -156,16 +156,26 @@ ON CONFLICT (fek) DO UPDATE SET
 -- diagram is useless for tracing. Filter on role at the raster layer, not here.
 
 INSERT INTO sp_geodata.fek_documents (fek, pdf_url, downloaded, source, notes)
-SELECT DISTINCT btrim(k.fek), k.fek_file_url, FALSE, k.src, 'no local PDF yet'
+-- One candidate per target key, including FEK present in BOTH sources (e.g.
+-- 406Δ/1989). DISTINCT over (fek,url,src) does not prevent an upsert from
+-- affecting the same row twice. Prefer a nonblank URL, then active diagrams,
+-- then a stable URL tie-break; existing registry URLs/local paths still win.
+SELECT DISTINCT ON (btrim(k.fek))
+    btrim(k.fek), NULLIF(btrim(k.fek_file_url), ''), FALSE, k.src, 'no local PDF yet'
 FROM (
-    SELECT fek, fek_file_url, 'planning_diagrams' AS src
+    SELECT fek, fek_file_url, 'planning_diagrams' AS src, 0 AS source_priority
     FROM epoleodomia.planning_diagrams
     WHERE fek IS NOT NULL AND NOT COALESCE(is_deleted, FALSE)
-    UNION
-    SELECT fek, fek_file_url, 'fek_no_diagrams' AS src
+    UNION ALL
+    SELECT fek, fek_file_url, 'fek_no_diagrams' AS src, 1 AS source_priority
     FROM epoleodomia.fek_no_diagrams
     WHERE fek IS NOT NULL
 ) k
+WHERE btrim(k.fek) <> ''
+ORDER BY btrim(k.fek),
+         NULLIF(btrim(k.fek_file_url), '') IS NULL,
+         k.source_priority,
+         NULLIF(btrim(k.fek_file_url), '') COLLATE "C"
 ON CONFLICT (fek) DO UPDATE SET
     -- never downgrade a row that already has a local path
     pdf_url    = COALESCE(sp_geodata.fek_documents.pdf_url, EXCLUDED.pdf_url),

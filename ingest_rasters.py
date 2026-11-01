@@ -31,7 +31,7 @@ Typical use
 Re-running is safe: a file whose hash is unchanged is skipped, a changed file
 is updated in place, and files that vanished are reported but never deleted.
 
-Requires: rasterio, psycopg2-binary, python-dotenv
+Requires: rasterio, psycopg2-binary
 """
 
 import argparse
@@ -45,8 +45,8 @@ from datetime import datetime, timezone
 #
 # download_rasters.py does `except ImportError: pass` around its rasterio
 # import, so on a machine without rasterio it silently writes NULL metadata
-# and reports success. rasterio is also still commented out in
-# requirements.txt. We fail loudly instead.
+# and reports success. requirements.txt now requires rasterio; report a missing
+# installation explicitly rather than silently losing metadata.
 # --------------------------------------------------------------------------
 # Imports are checked in main() rather than at module load, so that --help
 # still works on a machine that is missing them.
@@ -59,22 +59,14 @@ try:
     from rasterio.transform import Affine
     from rasterio.warp import reproject
 except ImportError:
-    MISSING.append(
-        "rasterio     pip install rasterio\n"
-        "                 (also uncomment it in requirements.txt - "
-        "download_rasters.py\n"
-        "                  silently writes empty metadata without it)")
+    MISSING.append("rasterio     pip install -r requirements.txt")
 
 try:
     import psycopg2
 except ImportError:
     MISSING.append("psycopg2     pip install psycopg2-binary")
 
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
+from settings import SETTINGS
 
 
 TARGET_EPSG = 2100          # EGSA '87 - everything in this project lives here
@@ -88,17 +80,10 @@ TABLE = "sp_geodata.raster_sheets"
 
 def db_connect():
     try:
-        return psycopg2.connect(
-            host=os.environ.get("EPOL_DB_HOST", "localhost"),
-            port=os.environ.get("EPOL_DB_PORT", "5432"),
-            dbname=os.environ.get("EPOL_DB_NAME", "gis"),
-            user=os.environ["EPOL_DB_USER"],
-            password=os.environ["EPOL_DB_PASSWORD"],
-        )
-    except KeyError as e:
-        sys.exit(f"FATAL: missing env var {e}. Copy .env.example to .env.")
-    except psycopg2.Error as e:
-        sys.exit(f"FATAL: cannot connect to the database: {e}")
+        SETTINGS.database.require_password()
+        return psycopg2.connect(**SETTINGS.database.connection_kwargs())
+    except (ValueError, psycopg2.Error) as exc:
+        sys.exit(f"FATAL: cannot connect to the database: {exc}")
 
 
 # ==========================================================================
@@ -646,14 +631,20 @@ def main():
             "is_tiled", "has_overviews", "overview_count")})
 
         if args.commit:
+            cur.execute('SAVEPOINT epol_raster_sheet')
             try:
                 cur.execute(UPSERT, row)
-                stats["updated" if rel in known else "new"] += 1
             except psycopg2.Error as e:
-                conn.rollback()
+                # Keep successful preceding files and recover this transaction
+                # before attempting the next file. A full rollback here used
+                # to discard earlier inserts while leaving their counters set.
+                cur.execute('ROLLBACK TO SAVEPOINT epol_raster_sheet')
+                cur.execute('RELEASE SAVEPOINT epol_raster_sheet')
                 stats["failed"] += 1
                 print(f"           DB ERROR: {e}")
                 continue
+            cur.execute('RELEASE SAVEPOINT epol_raster_sheet')
+            stats["updated" if rel in known else "new"] += 1
         else:
             stats["updated" if rel in known else "new"] += 1
 

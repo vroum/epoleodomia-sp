@@ -2,15 +2,23 @@
 Fetch layers from ArcGIS REST API
 """
 
+import hashlib
 import json
 import requests
 from typing import Dict, List, Optional, Any
 from config import SPETSES_BBOX, MAX_RECORDS_PER_REQUEST, REQUEST_TIMEOUT
+from arcgis_client import request_json
+from sync_safety import FetchError, SyncError, validate_features
 
 
 def build_query_url(service_url: str, layer_id: int) -> str:
     """Build the query URL for a specific layer."""
     return f"{service_url}/{layer_id}/query"
+
+
+def _request_json(url, params):
+    """A failed request is never interchangeable with an empty source layer."""
+    return request_json(url, params, REQUEST_TIMEOUT)
 
 
 def fetch_layer_count(service_url: str, layer_id: int, bbox: Dict = None) -> int:
@@ -40,23 +48,11 @@ def fetch_layer_count(service_url: str, layer_id: int, bbox: Dict = None) -> int
         "f": "json"
     }
 
-    try:
-        response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
-        response.raise_for_status()
-        data = response.json()
-
-        if "error" in data:
-            print(f"Error from server: {data['error']}")
-            return 0
-
-        return data.get("count", 0)
-
-    except requests.exceptions.RequestException as e:
-        print(f"Request error: {e}")
-        return 0
-    except json.JSONDecodeError as e:
-        print(f"JSON decode error: {e}")
-        return 0
+    data = _request_json(url, params)
+    count = data.get("count")
+    if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+        raise FetchError(f"ArcGIS returned a missing/invalid count for {url}")
+    return count
 
 
 def fetch_layer_data(
@@ -102,22 +98,11 @@ def fetch_layer_data(
     }
 
     try:
-        response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
-        response.raise_for_status()
-        data = response.json()
-
-        if "error" in data:
-            print(f"Error from server: {data['error']}")
-            return {"type": "FeatureCollection", "features": []}
-
-        return data
-
-    except requests.exceptions.RequestException as e:
-        print(f"Request error: {e}")
-        return {"type": "FeatureCollection", "features": []}
-    except json.JSONDecodeError as e:
-        print(f"JSON decode error: {e}")
-        return {"type": "FeatureCollection", "features": []}
+        data = _request_json(url, params)
+        validate_features(data)
+    except SyncError as exc:
+        raise FetchError(f"Layer {layer_id}, offset {offset}: {exc}") from exc
+    return data
 
 
 def fetch_all_layer_data(
@@ -126,7 +111,12 @@ def fetch_all_layer_data(
     bbox: Dict = None
 ) -> Dict[str, Any]:
     """
-    Fetch all features from a layer, handling pagination.
+    Fetch a complete layer into memory before permitting a database load.
+
+    Raises FetchError on failed pages, malformed responses, repeated pages or
+    a count mismatch. Short pages are allowed (server-side page caps vary).
+    Counts are checked again at the end to detect source changes during paging;
+    this cannot provide a transactional snapshot of the remote service.
 
     Args:
         service_url: Base URL of the MapServer
@@ -146,6 +136,7 @@ def fetch_all_layer_data(
         return {"type": "FeatureCollection", "features": []}
 
     all_features = []
+    seen_pages = set()
     offset = 0
 
     while offset < total_count:
@@ -155,13 +146,26 @@ def fetch_all_layer_data(
         features = data.get("features", [])
 
         if not features:
-            break
+            raise FetchError(
+                f"Layer {layer_id}: incomplete download ({offset}/{total_count} records)")
+
+        page_hash = hashlib.sha256(json.dumps(features, sort_keys=True).encode("utf-8")).digest()
+        if page_hash in seen_pages:
+            raise FetchError(f"Layer {layer_id}: repeated page at offset {offset}")
+        seen_pages.add(page_hash)
 
         all_features.extend(features)
         offset += len(features)
 
-        if len(features) < MAX_RECORDS_PER_REQUEST:
-            break
+        if offset > total_count:
+            raise FetchError(
+                f"Layer {layer_id}: downloaded {offset} records, expected {total_count}")
+
+    final_count = fetch_layer_count(service_url, layer_id, bbox)
+    if final_count != total_count:
+        raise FetchError(
+            f"Layer {layer_id}: source count changed during download "
+            f"({total_count} -> {final_count}); rerun the sync")
 
     print(f"  Total features fetched: {len(all_features)}")
 

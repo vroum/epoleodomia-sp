@@ -1,5 +1,7 @@
 -- ============================================================================
 -- TEE Urban Planning Data Mirror — Spetses Island
+-- HISTORICAL DESTRUCTIVE REBUILD: drops existing tables and dependent views.
+-- Use database_setup.py for a read-only preview and versioned setup instead.
 -- Schema: epoleodomia  |  CRS: EPSG:2100 (GGRS87)
 -- v1.1 — Consolidated DDL (all migrations merged)
 --

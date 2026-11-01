@@ -1,0 +1,34 @@
+TITLE|ΟΡOI ΔΟΜΗΣΗΣ|O.T. TEST POINT
+ROW|Χρήσεις γης|TEST USE
+HEADER|Κατά Κανόνα  —  Τομέας B|
+ROW|Αρτιότητα|400 τ.μ.
+ROW|Κάλυψη|35%
+ROW|Συντ. Δόμησης|0.6  (κλιμακωτός: TEST STEPS)
+HEADER|Κατά Παρέκκλιση|
+ROW|Προ|προ TEST DATE
+MERGED|TEST EXCEPTION|
+ROW|ΦΕΚ|TEST-EXCEPTION
+HEADER|Λοιποί Περιορισμοί|
+MERGED|TEST REMARK|
+HEADER|ΑΙΓΙΑΛΟΣ / ΠΑΡΑΛΙΑ|
+ROW|Γραμμή Αιγιαλού|25.0 μ. (ΦΕΚ TEST-CURRENT)
+ROW|Γραμμή Αιγιαλού (ΠΟΑ)|12.0 μ.
+ROW|Γραμμή Παραλίας|10.0 μ. (ΦΕΚ TEST-BEACH)
+ROW|Γραμμή Παραλίας (ΠΟΑ)|8.0 μ.
+ROW|Γραμμή Παλαιού Αιγιαλού|30.0 μ. (ΦΕΚ TEST-OLD)
+HEADER|ΑΡΧΑΙΟΛΟΓΙΑ|
+ROW|Ζώνη Προστασίας|ΝΑΙ — TEST ZONE
+ROW|Πλησιέστερο Μνημείο|TEST MONUMENT — TEST OT  (8.0 μ.)
+HEADER|ΕΚΚΛΗΣΙΕΣ|
+ROW|Πλησιέστερη|TEST CHURCH
+ROW|Απόσταση|15.0 μ.
+HEADER|NATURA / ΔΑΣΗ|
+ROW|Natura 2000|ΝΑΙ — TEST NATURA (TEST001)
+ROW|Δασικός Χάρτης (ανάρτηση 2021)|ΝΑΙ (ΔΔ — Δάσος)
+ROW|Κατηγορία δάσους|δασικό
+ROW|Χρήση γης ΚΑΕΚ|TEST FOREST USE
+HEADER|ΡΕΜΑΤΑ|
+ROW|Πιθανή Γρ. Πλημμύρας|6.0 μ.
+ROW|Άλλο ρέμα (εντός οικ.)|20.0 μ.
+HEADER|ΥΔΡΟΛΗΨΙΕΣ (ΕΜΣΥ)|
+ROW|Πλησιέστερη|Σημείο υδροληψίας — ΕΜΣΥ TEST-NEAR — 35.0 μ.

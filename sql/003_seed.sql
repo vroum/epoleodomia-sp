@@ -1,6 +1,9 @@
 -- ============================================================================
 -- Post-sync seed operations
 -- Run AFTER first data sync to populate derived data
+-- Historical manual seed. Current planning_diagrams loaders automatically run
+-- 006_refresh_raster_catalog.sql in their data transaction. Prefer that refresh
+-- for subsequent catalog updates; it preserves existing technical judgements.
 -- ============================================================================
 
 SET search_path TO epoleodomia, public;

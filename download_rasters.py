@@ -1,301 +1,367 @@
 #!/usr/bin/env python3
-"""
-TEE Epoleodomia Raster Download Script
-Downloads georeferenced planning diagram TIF files from TEE servers
+"""Download validated TEE GeoTIFFs with per-file catalog publication.
 
-Usage:
-    python download_rasters.py              # Download all pending rasters
-    python download_rasters.py --dry-run    # Show what would be downloaded
-    python download_rasters.py --fek "1385Δ/1992"  # Download specific FEK only
-    python download_rasters.py --force      # Re-download existing files
-    python download_rasters.py --include-raw  # Also download raw scans
+Use sync_launcher.py rasters for dedicated writer credentials. --dry-run only
+reads the catalog; --raster-id and --limit bound controlled downloads.
 """
 
 import argparse
-import os
-import re
-import sys
-import time
-import hashlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import closing
 from datetime import datetime
+import math
+import os
 from pathlib import Path
-from typing import Optional, Dict, List, Any
-from urllib.parse import urlparse, unquote
+import re
+import shutil
+import sys
+import tempfile
+import time
 
 import psycopg2
 import requests
 from tqdm import tqdm
 
-sys.path.insert(0, str(Path(__file__).parent))
-from config import DATABASE
+from settings import SETTINGS
+from raster_paths import resolve_fek_path
 
-# Constants
-RASTERS_DIR = Path(__file__).parent / "rasters"
-GEOREF_DIR = RASTERS_DIR / "georef"
-RAW_DIR = RASTERS_DIR / "raw"
 
-CHUNK_SIZE = 8192
+# Resolve relative catalog paths against the same root as the API.
+GEOREF_DIR = Path(SETTINGS.raster_base_path)
+CHUNK_SIZE = 64 * 1024
 REQUEST_TIMEOUT = 120
 MAX_RETRIES = 3
 RETRY_DELAY = 5
 
 
-def get_db_connection():
-    """Create database connection."""
-    return psycopg2.connect(
-        host=DATABASE["host"],
-        port=DATABASE["port"],
-        database=DATABASE["database"],
-        user=DATABASE["user"],
-        password=DATABASE["password"],
-    )
+def get_db_connection(*, read_only=False):
+    options = '-c lock_timeout=5000 -c statement_timeout=120000'
+    if read_only:
+        options += ' -c default_transaction_read_only=on'
+    return psycopg2.connect(**SETTINGS.database.connection_kwargs(), options=options)
 
 
-def sanitize_fek_folder(fek: str) -> str:
+def require_rasterio():
+    try:
+        import rasterio
+    except ImportError as exc:
+        raise RuntimeError('rasterio is required; install requirements.txt before downloading') from exc
+    return rasterio
+
+
+def sanitize_fek_folder(fek):
     if not fek:
-        return "FEK_UNKNOWN"
-    greek_to_latin = {
-        'Α': 'A', 'Β': 'B', 'Γ': 'G', 'Δ': 'D', 'Ε': 'E',
-        'Ζ': 'Z', 'Η': 'H', 'Θ': 'TH', 'Ι': 'I', 'Κ': 'K',
-        'Λ': 'L', 'Μ': 'M', 'Ν': 'N', 'Ξ': 'X', 'Ο': 'O',
-        'Π': 'P', 'Ρ': 'R', 'Σ': 'S', 'Τ': 'T', 'Υ': 'Y',
-        'Φ': 'F', 'Χ': 'CH', 'Ψ': 'PS', 'Ω': 'O',
-        'α': 'a', 'β': 'b', 'γ': 'g', 'δ': 'd', 'ε': 'e',
-        'ζ': 'z', 'η': 'h', 'θ': 'th', 'ι': 'i', 'κ': 'k',
-        'λ': 'l', 'μ': 'm', 'ν': 'n', 'ξ': 'x', 'ο': 'o',
-        'π': 'p', 'ρ': 'r', 'σ': 's', 'ς': 's', 'τ': 't',
-        'υ': 'y', 'φ': 'f', 'χ': 'ch', 'ψ': 'ps', 'ω': 'o'
-    }
-    result = ""
-    for char in fek:
-        result += greek_to_latin.get(char, char)
+        return 'FEK_UNKNOWN'
+    greek = 'ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ'
+    latin = ['A','B','G','D','E','Z','H','TH','I','K','L','M','N','X','O','P','R','S','T','Y','F','CH','PS','O']
+    mapping = dict(zip(greek, latin))
+    mapping.update({g.lower(): l.lower() for g, l in zip(greek, latin)})
+    mapping['ς'] = 's'
+    result = ''.join(mapping.get(char, char) for char in fek)
     result = re.sub(r'[/\\:]', '_', result)
-    result = re.sub(r'[^a-zA-Z0-9_-]', '', result)
-    return f"FEK_{result}"
+    return 'FEK_' + re.sub(r'[^a-zA-Z0-9_-]', '', result)
 
 
-def get_pending_rasters(conn, fek_filter=None, include_downloaded=False):
-    cursor = conn.cursor()
-    status_filter = "('pending', 'failed', 'downloaded')" if include_downloaded else "('pending', 'failed')"
-    query = f"""
-        SELECT id, fek, filename, url_georef, url_raw, download_status, local_path_georef
-        FROM epoleodomia.raster_catalog
-        WHERE download_status IN {status_filter}
-    """
-    params = []
+def raster_destination(raster, base_dir):
+    """Reuse an existing flat file or the catalog's safe relative destination."""
+    name = raster['filename']
+    root = Path(base_dir).resolve()
+    relative = raster.get('local_path_georef') or f"{sanitize_fek_folder(raster['fek'])}/{name}"
+    destination = resolve_fek_path(root, name, relative)
+    return destination, destination.relative_to(root).as_posix()
+
+
+def get_pending_rasters(conn, fek_filter=None, include_downloaded=False, *, raster_id=None, limit=None):
+    statuses = ['pending', 'failed'] + (['downloaded'] if include_downloaded else [])
+    query = '''SELECT id,fek,filename,url_georef,url_raw,download_status,local_path_georef
+               FROM epoleodomia.raster_catalog WHERE download_status = ANY(%s)'''
+    params = [statuses]
     if fek_filter:
-        query += " AND fek = %s"
+        query += ' AND fek = %s'
         params.append(fek_filter)
-    query += " ORDER BY fek, filename"
-    cursor.execute(query, params)
-    columns = ['id', 'fek', 'filename', 'url_georef', 'url_raw', 'download_status', 'local_path_georef']
-    return [dict(zip(columns, row)) for row in cursor.fetchall()]
-
-
-def download_file(url, local_path, timeout=REQUEST_TIMEOUT):
-    result = {'success': False, 'file_size': 0, 'error': None}
-    for attempt in range(MAX_RETRIES):
-        try:
-            local_path.parent.mkdir(parents=True, exist_ok=True)
-            response = requests.get(url, stream=True, timeout=timeout)
-            response.raise_for_status()
-            with open(local_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
-                    if chunk:
-                        f.write(chunk)
-            if local_path.exists():
-                result['success'] = True
-                result['file_size'] = local_path.stat().st_size
-                return result
-            else:
-                result['error'] = "File not created after download"
-        except requests.exceptions.Timeout:
-            result['error'] = f"Timeout after {timeout}s"
-        except requests.exceptions.HTTPError as e:
-            result['error'] = f"HTTP {e.response.status_code}: {e.response.reason}"
-            if e.response.status_code == 404:
-                return result
-        except requests.exceptions.RequestException as e:
-            result['error'] = str(e)
-        except Exception as e:
-            result['error'] = f"Unexpected error: {str(e)}"
-        if attempt < MAX_RETRIES - 1:
-            time.sleep(RETRY_DELAY)
-    return result
+    if raster_id is not None:
+        query += ' AND id = %s'
+        params.append(raster_id)
+    query += ' ORDER BY fek,filename,id'
+    if limit is not None:
+        query += ' LIMIT %s'
+        params.append(limit)
+    with conn.cursor() as cursor:
+        cursor.execute(query, params)
+        columns = ['id','fek','filename','url_georef','url_raw','download_status','local_path_georef']
+        return [dict(zip(columns, row)) for row in cursor.fetchall()]
 
 
 def extract_raster_metadata(tif_path):
-    metadata = {}
-    try:
-        import rasterio
-        with rasterio.open(tif_path) as src:
-            metadata['width_px'] = src.width
-            metadata['height_px'] = src.height
-            metadata['bands'] = src.count
-            metadata['resolution_x'] = abs(src.transform[0])
-            metadata['resolution_y'] = abs(src.transform[4])
-            if src.crs:
-                try:
-                    metadata['crs_epsg'] = src.crs.to_epsg()
-                except:
-                    metadata['crs_epsg'] = None
-            metadata['nodata_value'] = src.nodata
-            bounds = src.bounds
-            metadata['bbox_wkt'] = (
-                f"POLYGON(({bounds.left} {bounds.bottom}, "
-                f"{bounds.right} {bounds.bottom}, "
-                f"{bounds.right} {bounds.top}, "
-                f"{bounds.left} {bounds.top}, "
-                f"{bounds.left} {bounds.bottom}))"
-            )
-    except ImportError:
-        pass
-    except Exception as e:
-        print(f"Warning: Could not extract metadata from {tif_path}: {e}")
-    return metadata
+    """Decode every pixel block; reject invalid CRS/orientation before publication."""
+    rasterio = require_rasterio()
+    from rasterio.windows import Window
+    with rasterio.open(tif_path) as src:
+        if src.driver != 'GTiff' or min(src.width, src.height, src.count) < 1:
+            raise ValueError('Expected a nonempty GeoTIFF')
+        if src.crs is None or src.crs.to_epsg() != 2100:
+            raise ValueError('GeoTIFF must declare EPSG:2100')
+        transform = src.transform
+        if (not all(math.isfinite(v) for v in transform[:6])
+                or transform.b != 0 or transform.d != 0 or transform.a <= 0 or transform.e >= 0):
+            raise ValueError('GeoTIFF must be north-up without rotation or shear')
+        bounds = src.bounds
+        if (not all(math.isfinite(v) for v in bounds)
+                or bounds.left >= bounds.right or bounds.bottom >= bounds.top):
+            raise ValueError('GeoTIFF has invalid bounds')
+        # Header reads alone do not detect truncated pixel data. Bound memory
+        # regardless of the source's strip/tile dimensions.
+        for band in range(1, src.count + 1):
+            for row in range(0, src.height, 512):
+                for col in range(0, src.width, 512):
+                    src.read(band, window=Window(col, row, min(512, src.width-col), min(512, src.height-row)))
+        return {
+            'width_px': src.width, 'height_px': src.height, 'bands': src.count,
+            'resolution_x': transform.a, 'resolution_y': -transform.e,
+            'crs_epsg': 2100, 'nodata_value': src.nodata,
+            'bbox_wkt': (f'POLYGON(({bounds.left} {bounds.bottom}, '
+                         f'{bounds.right} {bounds.bottom}, {bounds.right} {bounds.top}, '
+                         f'{bounds.left} {bounds.top}, {bounds.left} {bounds.bottom}))'),
+        }
 
 
-def update_catalog_downloaded(conn, raster_id, local_path, file_size, metadata):
-    cursor = conn.cursor()
-    set_parts = [
-        "download_status = 'downloaded'", "local_path_georef = %s",
-        "file_size_bytes = %s", "downloaded_at = NOW()", "last_checked = NOW()",
-        "download_error = NULL", "updated_at = NOW()"
-    ]
-    params = [local_path, file_size]
-    for key, col in [('width_px','width_px'), ('height_px','height_px'), ('bands','bands'),
-                     ('resolution_x','resolution_x'), ('resolution_y','resolution_y'),
-                     ('crs_epsg','crs_epsg')]:
-        if metadata.get(key):
-            set_parts.append(f"{col} = %s")
-            params.append(metadata[key])
-    if metadata.get('nodata_value') is not None:
-        set_parts.append("nodata_value = %s")
-        params.append(metadata['nodata_value'])
-    if metadata.get('bbox_wkt'):
-        set_parts.append("bbox = ST_GeomFromText(%s, 2100)")
-        params.append(metadata['bbox_wkt'])
-    params.append(raster_id)
-    cursor.execute(f"UPDATE epoleodomia.raster_catalog SET {', '.join(set_parts)} WHERE id = %s", params)
-    conn.commit()
-
-
-def update_catalog_failed(conn, raster_id, error):
-    cursor = conn.cursor()
-    cursor.execute("""
-        UPDATE epoleodomia.raster_catalog
-        SET download_status = 'failed', download_error = %s, last_checked = NOW(), updated_at = NOW()
-        WHERE id = %s
-    """, (error, raster_id))
-    conn.commit()
-
-
-def download_raster_worker(raster, base_dir, conn):
-    result = {'id': raster['id'], 'fek': raster['fek'], 'filename': raster['filename'],
-              'success': False, 'file_size': 0, 'error': None}
-    url = raster['url_georef']
-    if not url:
-        result['error'] = "No URL available"
-        return result
-    fek_folder = sanitize_fek_folder(raster['fek'])
-    local_path = base_dir / fek_folder / raster['filename']
-    relative_path = f"{fek_folder}/{raster['filename']}"
-    dl_result = download_file(url, local_path)
-    if dl_result['success']:
-        result['success'] = True
-        result['file_size'] = dl_result['file_size']
-        result['local_path'] = str(local_path)
-        metadata = extract_raster_metadata(local_path)
-        update_catalog_downloaded(conn, raster['id'], relative_path, dl_result['file_size'], metadata)
-    else:
-        result['error'] = dl_result['error']
-        update_catalog_failed(conn, raster['id'], dl_result['error'])
+def download_file(url, local_path, timeout=REQUEST_TIMEOUT):
+    """Return a validated temporary file; never overwrite the published file."""
+    result = {'success': False, 'file_size': 0, 'error': None}
+    for attempt in range(MAX_RETRIES):
+        staged = None
+        try:
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(dir=local_path.parent, prefix='.epol-', suffix='.part', delete=False) as stream:
+                staged = Path(stream.name)
+                with requests.get(url, stream=True, timeout=timeout, headers={'Accept-Encoding':'identity'}) as response:
+                    response.raise_for_status()
+                    if response.status_code != 200:
+                        raise ValueError(f'Expected HTTP 200, received {response.status_code}')
+                    size = 0
+                    for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
+                        if chunk:
+                            stream.write(chunk)
+                            size += len(chunk)
+                    declared = response.headers.get('Content-Length')
+                    encoding = response.headers.get('Content-Encoding', 'identity').lower()
+                    if declared is not None and encoding in ('', 'identity') and size != int(declared):
+                        raise ValueError(f'Incomplete download: expected {declared} bytes, received {size}')
+                    if size == 0:
+                        raise ValueError('Empty download')
+                stream.flush()
+                os.fsync(stream.fileno())
+            metadata = extract_raster_metadata(staged)
+            return dict(result, success=True, file_size=size, staged_path=staged, metadata=metadata)
+        except Exception as exc:
+            result['error'] = str(exc)
+            if staged is not None:
+                staged.unlink(missing_ok=True)
+            if isinstance(exc, requests.HTTPError) and exc.response is not None and exc.response.status_code == 404:
+                break
+            if isinstance(exc, (ValueError, RuntimeError)):
+                break
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(RETRY_DELAY)
     return result
 
 
-def sync_rasters(fek_filter=None, force=False, include_raw=False, parallel=4, dry_run=False):
-    GEOREF_DIR.mkdir(parents=True, exist_ok=True)
-    if include_raw:
-        RAW_DIR.mkdir(parents=True, exist_ok=True)
-    conn = get_db_connection()
+def _source_guard(raster):
+    if raster is None:
+        return '', []
+    return (' AND url_georef IS NOT DISTINCT FROM %s AND filename = %s AND fek IS NOT DISTINCT FROM %s',
+            [raster['url_georef'], raster['filename'], raster['fek']])
+
+
+def update_catalog_downloaded(conn, raster_id, local_path, file_size, metadata, *, commit=True, source=None):
+    """Update only technical/download columns; preserve human quality judgements."""
+    assignments = ["download_status = 'downloaded'", 'local_path_georef = %s',
+                   'file_size_bytes = %s', 'downloaded_at = NOW()', 'last_checked = NOW()',
+                   'download_error = NULL', 'updated_at = NOW()']
+    params = [local_path, file_size]
+    for column in ('width_px','height_px','bands','resolution_x','resolution_y','crs_epsg','nodata_value'):
+        if column in metadata:
+            assignments.append(f'{column} = %s')
+            params.append(metadata[column])
+    if metadata.get('bbox_wkt'):
+        assignments.append('bbox = ST_GeomFromText(%s,2100)')
+        params.append(metadata['bbox_wkt'])
+    guard, values = _source_guard(source)
+    with conn.cursor() as cursor:
+        cursor.execute(f"UPDATE epoleodomia.raster_catalog SET {', '.join(assignments)} WHERE id = %s" + guard,
+                       params + [raster_id] + values)
+        if cursor.rowcount != 1:
+            raise ValueError('Raster catalog source changed or row disappeared; download was not published')
+    if commit:
+        conn.commit()
+
+
+def update_catalog_failed(conn, raster_id, error, *, source=None):
+    # A failed forced refresh must not hide a previously published raster.
+    guard, values = _source_guard(source)
+    with conn.cursor() as cursor:
+        cursor.execute('''UPDATE epoleodomia.raster_catalog
+            SET download_status = CASE WHEN download_status = 'downloaded' THEN 'downloaded' ELSE 'failed' END,
+                download_error = %s, last_checked = NOW(), updated_at = NOW()
+            WHERE id = %s''' + guard, [error, raster_id] + values)
+    conn.commit()
+
+
+def download_raster_worker(raster, base_dir):
+    """Network/files only: no connection or transaction is shared by threads."""
+    result = {key: raster[key] for key in ('id','fek','filename')}
+    result.update(success=False, file_size=0, error=None)
     try:
-        rasters = get_pending_rasters(conn, fek_filter, include_downloaded=force)
-        if not rasters:
-            print("No rasters to download.")
-            return {'total': 0, 'downloaded': 0, 'failed': 0, 'skipped': 0}
-        print(f"\nFound {len(rasters)} raster(s) to download")
-        if dry_run:
-            print("\n[DRY RUN] Would download:")
-            for r in rasters:
-                print(f"  - {sanitize_fek_folder(r['fek'])}/{r['filename']}")
-                print(f"    URL: {r['url_georef']}")
-            return {'total': len(rasters), 'downloaded': 0, 'failed': 0, 'skipped': 0}
-        results = {'total': len(rasters), 'downloaded': 0, 'failed': 0, 'skipped': 0,
-                   'total_bytes': 0, 'errors': []}
-        print(f"\nDownloading to: {GEOREF_DIR}")
-        print(f"Parallel downloads: {parallel}\n")
-        with tqdm(total=len(rasters), desc="Downloading", unit="file") as pbar:
-            if parallel > 1:
-                with ThreadPoolExecutor(max_workers=parallel) as executor:
-                    futures = {executor.submit(download_raster_worker, r, GEOREF_DIR, conn): r for r in rasters}
-                    for future in as_completed(futures):
-                        result = future.result()
-                        if result['success']:
-                            results['downloaded'] += 1
-                            results['total_bytes'] += result['file_size']
-                        else:
-                            results['failed'] += 1
-                            results['errors'].append({'filename': result['filename'], 'error': result['error']})
-                        pbar.update(1)
+        destination, relative = raster_destination(raster, base_dir)
+        if not raster['url_georef']:
+            raise ValueError('No georeferenced URL available')
+        result.update(download_file(raster['url_georef'], destination))
+        result.update(local_path=str(destination), relative_path=relative)
+    except Exception as exc:
+        result.update(success=False, error=str(exc))
+    return result
+
+
+def publish_download(conn, raster, result):
+    """Publish on the main thread; restore the previous file on transaction failure.
+
+    Filesystem/PostgreSQL cannot share a crash-atomic commit. A crash between
+    replacement and commit can leave valid new bytes with old catalog metadata;
+    repeating that bounded download reconciles it. Retain the backup if its
+    restoration fails instead of discarding the last good copy.
+    """
+    staged = result['staged_path']
+    destination = Path(result['local_path'])
+    backup = None
+    published = False
+    try:
+        with conn:
+            update_catalog_downloaded(conn, raster['id'], result['relative_path'], result['file_size'],
+                                      result['metadata'], commit=False, source=raster)
+            # The UPDATE above locks/verifies this source row before replacing
+            # its file; a concurrent publication of the same row waits here.
+            if destination.exists():
+                with tempfile.NamedTemporaryFile(dir=destination.parent, prefix='.epol-', suffix='.previous', delete=False) as stream:
+                    backup = Path(stream.name)
+                shutil.copyfile(destination, backup)
+            os.replace(staged, destination)
+            published = True
+    except BaseException:
+        if published:
+            if backup is not None:
+                try:
+                    os.replace(backup, destination)
+                except OSError as exc:
+                    raise RuntimeError(f'Could not restore raster; previous file retained at {backup}') from exc
+                backup = None
             else:
-                for raster in rasters:
-                    result = download_raster_worker(raster, GEOREF_DIR, conn)
-                    if result['success']:
+                destination.unlink(missing_ok=True)
+        raise
+    finally:
+        staged.unlink(missing_ok=True)
+        if backup is not None and not published:
+            backup.unlink(missing_ok=True)
+    if backup is not None:
+        backup.unlink(missing_ok=True)
+
+
+def sync_rasters(fek_filter=None, force=False, include_raw=False, parallel=4, dry_run=False, *,
+                 raster_id=None, limit=None, repair_missing=False):
+    if include_raw:
+        raise ValueError('--include-raw is unsupported; raw scans were never downloaded by this command')
+    for name, number in (('parallel', parallel), ('limit', limit), ('raster_id', raster_id)):
+        if number is not None and (isinstance(number, bool) or not isinstance(number, int) or number < 1):
+            raise ValueError(f'{name} must be a positive integer')
+    with closing(get_db_connection(read_only=True)) as conn:
+        rasters = get_pending_rasters(conn, fek_filter, include_downloaded=force or repair_missing,
+                                     raster_id=raster_id, limit=None if repair_missing and not force else limit)
+    if repair_missing and not force:
+        rasters = [r for r in rasters if r['download_status'] != 'downloaded'
+                   or not raster_destination(r, GEOREF_DIR)[0].is_file()]
+        if limit is not None:
+            rasters = rasters[:limit]
+    results = {'total': len(rasters), 'downloaded': 0, 'failed': 0, 'skipped': 0, 'total_bytes': 0, 'errors': []}
+    if not rasters:
+        print('No rasters to download.')
+        return results
+    destinations = [str(raster_destination(r, GEOREF_DIR)[0]).casefold() for r in rasters]
+    if len(set(destinations)) != len(destinations):
+        raise ValueError('Multiple catalog rows resolve to the same raster destination')
+    print(f'Found {len(rasters)} raster(s); destination: {GEOREF_DIR}')
+    if dry_run:
+        for raster, destination in zip(rasters, destinations):
+            print(f"[DRY RUN] id={raster['id']} {destination}")
+        return results
+    require_rasterio()
+    # Only this thread writes. Roll back each failed transaction before recording
+    # the error, so one failed file cannot poison another file's publication.
+    futures = {}
+    try:
+        with closing(get_db_connection()) as conn, ThreadPoolExecutor(max_workers=parallel) as executor:
+            futures = {executor.submit(download_raster_worker, r, GEOREF_DIR): r for r in rasters}
+            with tqdm(total=len(rasters), desc='Downloading', unit='file') as progress:
+                for future in as_completed(futures):
+                    raster = futures[future]
+                    try:
+                        result = future.result()
+                        if not result['success']:
+                            raise ValueError(result['error'])
+                        publish_download(conn, raster, result)
+                    except Exception as exc:
+                        conn.rollback()
+                        error = str(exc)
+                        try:
+                            update_catalog_failed(conn, raster['id'], error, source=raster)
+                        except Exception as audit_error:
+                            conn.rollback()
+                            error += f'; could not record download failure: {audit_error}'
+                        results['failed'] += 1
+                        results['errors'].append({'id': raster['id'], 'filename': raster['filename'], 'error': error})
+                    else:
                         results['downloaded'] += 1
                         results['total_bytes'] += result['file_size']
-                    else:
-                        results['failed'] += 1
-                        results['errors'].append({'filename': result['filename'], 'error': result['error']})
-                    pbar.update(1)
-        print(f"\n{'='*60}")
-        print("DOWNLOAD SUMMARY")
-        print(f"{'='*60}")
-        print(f"Total rasters:    {results['total']}")
-        print(f"Downloaded:       {results['downloaded']}")
-        print(f"Failed:           {results['failed']}")
-        print(f"Total size:       {results['total_bytes'] / 1024 / 1024:.2f} MB")
-        if results['errors']:
-            print(f"\nFailed downloads:")
-            for err in results['errors'][:10]:
-                print(f"  - {err['filename']}: {err['error']}")
-            if len(results['errors']) > 10:
-                print(f"  ... and {len(results['errors']) - 10} more")
-        print(f"{'='*60}")
-        return results
+                    progress.update(1)
     finally:
-        conn.close()
+        # Executor shutdown has joined the workers, including on interruption or
+        # connection loss. Remove validated files that never reached publication.
+        for future in futures:
+            try:
+                staged = future.result().get('staged_path')
+            except BaseException:
+                continue
+            if staged is not None:
+                try:
+                    staged.unlink(missing_ok=True)
+                except OSError as exc:
+                    print(f'Could not remove staged download {staged}: {exc}', file=sys.stderr)
+    print(f"Downloaded: {results['downloaded']}; failed: {results['failed']}; size: {results['total_bytes']/1024/1024:.2f} MB")
+    for error in results['errors']:
+        print(f"  id={error['id']} {error['filename']}: {error['error']}")
+    return results
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Download TEE planning diagram rasters")
-    parser.add_argument('--fek', type=str, help='Download only rasters for this FEK')
-    parser.add_argument('--force', action='store_true', help='Re-download existing files')
-    parser.add_argument('--include-raw', action='store_true', help='Also download raw scans')
-    parser.add_argument('--parallel', type=int, default=4, help='Number of parallel downloads (default: 4)')
-    parser.add_argument('--dry-run', action='store_true', help='Show what would be downloaded')
+    parser = argparse.ArgumentParser(description='Download and validate TEE EPSG:2100 planning GeoTIFFs')
+    parser.add_argument('--fek', help='Download only this FEK')
+    parser.add_argument('--force', action='store_true', help='Refresh already downloaded files too')
+    parser.add_argument('--repair-missing', action='store_true',
+                        help='Include downloaded rows whose local TIFF is missing; --force overrides this filter')
+    parser.add_argument('--include-raw', action='store_true', help='Unsupported legacy option (fails explicitly)')
+    parser.add_argument('--parallel', type=int, default=4)
+    parser.add_argument('--limit', type=int, help='Process at most this many catalog rows')
+    parser.add_argument('--raster-id', type=int, help='Process only this catalog ID')
+    parser.add_argument('--dry-run', action='store_true', help='Read-only preview; creates no directories or files')
     args = parser.parse_args()
+    print(f"TEE RASTER DOWNLOAD - {datetime.now():%Y-%m-%d %H:%M:%S}")
+    try:
+        results = sync_rasters(fek_filter=args.fek, force=args.force, include_raw=args.include_raw,
+                               parallel=args.parallel, dry_run=args.dry_run, raster_id=args.raster_id,
+                               limit=args.limit, repair_missing=args.repair_missing)
+    except Exception as exc:
+        print(f'Raster sync failed: {exc}', file=sys.stderr)
+        return 1
+    return 1 if results['failed'] else 0
 
-    print("="*60)
-    print("TEE RASTER DOWNLOAD")
-    print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("="*60)
 
-    results = sync_rasters(fek_filter=args.fek, force=args.force, include_raw=args.include_raw,
-                           parallel=args.parallel, dry_run=args.dry_run)
-    if results['failed'] > 0:
-        sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    raise SystemExit(main())

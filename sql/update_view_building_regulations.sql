@@ -1,4 +1,6 @@
 -- Update v_building_blocks_regulations view with additional fields
+-- HISTORICAL PATCH: superseded by sql/migrations/0002_live_tee_contract.sql.
+-- Replaying this drops the newer overlap/fallback/land-use improvements.
 -- Run this in pgAdmin or psql with write access
 --
 -- Key change: Two joins for building_regs_lot:

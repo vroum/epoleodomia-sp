@@ -22,35 +22,18 @@ Requires: .env next to this script (EPOL_DB_* variables), requests, psycopg2.
 
 import argparse
 import json
-import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-import requests
+from arcgis_client import fetch_count, fetch_object_ids, request_json
+from sync_safety import FetchError, LoadError, SyncError, validate_features
 
 
-# --- .env loader --------------------------------------------------------------
-def load_env(path: Path):
-    if not path.exists():
-        return
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith((";", "#")) or "=" not in line:
-            continue
-        k, _, v = line.partition("=")
-        os.environ.setdefault(k.strip(), v.strip())
+from settings import SETTINGS
 
-
-load_env(Path(__file__).parent / ".env")
-
-DB = {
-    "host": os.environ.get("EPOL_DB_HOST", "10.90.144.153"),
-    "port": os.environ.get("EPOL_DB_PORT", "65432"),
-    "dbname": os.environ.get("EPOL_DB_NAME", "gis"),
-    "user": os.environ.get("EPOL_DB_USER", "docker"),
-    "password": os.environ.get("EPOL_DB_PASSWORD", ""),
-}
+DB = SETTINGS.database.connection_kwargs()
 
 BASE = ("https://services-eu1.arcgis.com/40tFGWzosjaLJpmn/arcgis/"
         "rest/services/{service}/FeatureServer/0/query")
@@ -77,66 +60,106 @@ PG_TYPES = {
     "esriFieldTypeSingle": "double precision",
     "esriFieldTypeString": "text",
     "esriFieldTypeDate": "timestamptz",
+    "esriFieldTypeGUID": "text",
+    "esriFieldTypeGlobalID": "text",
 }
 SKIP_FIELDS = {"shape__area", "shape__length"}
 
 
 def get_layer_fields(service: str) -> list[tuple[str, str]]:
     url = BASE.format(service=service).rsplit("/query", 1)[0]
-    meta = requests.get(url, params={"f": "json"}, timeout=TIMEOUT).json()
+    meta = request_json(url, {"f": "json"}, TIMEOUT, "Cadastre")
+    if not isinstance(meta.get("fields"), list) or not meta["fields"]:
+        raise FetchError(f"{service}: missing/invalid layer fields")
     fields = []
-    for f in meta.get("fields", []):
-        col = f["name"].lower()
+    seen = set()
+    for field in meta["fields"]:
+        if not isinstance(field, dict):
+            raise FetchError(f"{service}: malformed layer field")
+        name, field_type = field.get("name"), field.get("type")
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+            raise FetchError(f"{service}: invalid layer field name {name!r}")
+        col = name.lower()
         if col in SKIP_FIELDS:
             continue
-        fields.append((f["name"], PG_TYPES.get(f["type"], "text")))
+        if col in seen or col in {"geom", "gid", "synced_at"}:
+            raise FetchError(f"{service}: duplicate/reserved layer field {name!r}")
+        if not isinstance(field_type, str) or field_type not in PG_TYPES:
+            raise FetchError(f"{service}: unsupported type for {name}: {field_type!r}")
+        seen.add(col)
+        fields.append((name, PG_TYPES[field_type]))
+    if not fields:
+        raise FetchError(f"{service}: no usable layer fields")
     return fields
 
 
+def _query_params():
+    return {
+        "where": "1=1", "geometry": BBOX, "geometryType": "esriGeometryEnvelope",
+        "inSR": "2100", "spatialRel": "esriSpatialRelIntersects", "f": "json",
+    }
+
+
+def _source_ids(service):
+    return fetch_object_ids(BASE.format(service=service), _query_params(), TIMEOUT,
+                            f"Cadastre {service}")
+
+
 def fetch_features(service: str):
-    """Yield geojson features, paged."""
-    offset = 0
-    while True:
-        params = {
-            "where": "1=1",
-            "geometry": BBOX,
-            "geometryType": "esriGeometryEnvelope",
-            "inSR": "2100",
-            "spatialRel": "esriSpatialRelIntersects",
-            "outFields": "*",
-            "outSR": "2100",
-            "f": "geojson",
-            "maxAllowableOffset": "0",  # Request full-precision vertices (no simplification)
-            "resultOffset": offset,
-            "resultRecordCount": PAGE,
-        }
-        r = requests.get(BASE.format(service=service), params=params, timeout=TIMEOUT)
-        r.raise_for_status()
-        data = r.json()
-        feats = data.get("features", [])
-        if not feats:
-            return
-        yield from feats
-        if len(feats) < PAGE:
-            return
-        offset += len(feats)
+    """Return all verified features, never a partially consumed generator.
+
+    Query by the source's object-ID snapshot rather than by offsets. Short
+    server-capped responses are retried for only the still-missing IDs. Every
+    received identity must be requested and unique; the final source ID set
+    must match. This detects membership changes, not concurrent attribute edits.
+    """
+    expected_count = count_features(service)
+    oid_name, expected_ids = _source_ids(service)
+    if len(expected_ids) != expected_count:
+        raise FetchError(f"{service}: source count/object-ID mismatch; rerun the sync")
+    remaining = set(expected_ids)
+    features = []
+    while remaining:
+        requested = set(sorted(remaining)[:PAGE])
+        params = dict(_query_params(), objectIds=",".join(str(i) for i in sorted(requested)),
+                      outFields="*", outSR="2100", f="geojson", returnGeometry="true",
+                      maxAllowableOffset="0", resultRecordCount=PAGE)
+        data = request_json(BASE.format(service=service), params, TIMEOUT, "Cadastre", method="POST")
+        try:
+            batch = validate_features(data)
+        except SyncError as exc:
+            raise FetchError(f"{service}: {exc}") from exc
+        if not batch:
+            raise FetchError(f"{service}: incomplete download ({len(features)}/{expected_count})")
+        received = set()
+        for feat in batch:
+            props = {k.lower(): v for k, v in feat["properties"].items()}
+            oid = props.get(oid_name.lower())
+            if isinstance(oid, bool) or not isinstance(oid, int) or oid not in requested:
+                raise FetchError(f"{service}: unexpected/missing object ID {oid!r}")
+            if oid in received:
+                raise FetchError(f"{service}: duplicate downloaded object ID {oid}")
+            received.add(oid)
+        remaining.difference_update(received)
+        features.extend(batch)
+
+    final_name, final_ids = _source_ids(service)
+    if final_name.lower() != oid_name.lower() or final_ids != expected_ids:
+        raise FetchError(f"{service}: source object IDs changed during download; rerun the sync")
+    return features
 
 
 def count_features(service: str) -> int:
-    params = {
-        "where": "1=1", "geometry": BBOX, "geometryType": "esriGeometryEnvelope",
-        "inSR": "2100", "spatialRel": "esriSpatialRelIntersects",
-        "returnCountOnly": "true", "f": "json",
-    }
-    r = requests.get(BASE.format(service=service), params=params, timeout=TIMEOUT)
-    return r.json().get("count", -1)
+    return fetch_count(BASE.format(service=service), _query_params(), TIMEOUT,
+                       f"Cadastre {service}")
 
 
 def _diff_before_swap(cur, table: str, tmp: str, qualified: str):
     """
     Diff old vs new BEFORE the table swap.
-    Parcels: lists of new/removed KAEK, geometry changes (ST_Equals) and
-    main-use changes. Overlay tables (δουλείες/ΑΧ): row-count delta only.
+    Parcels: new/removed KAEK, geometry (ST_Equals), main-use and other
+    source-attribute changes, including source-ID reassignments for stable KAEK.
+    Overlay tables (δουλείες/ΑΧ): row-count delta only.
     Returns None on first run (no previous table).
     """
     cur.execute("SELECT to_regclass(%s)", (qualified,))
@@ -176,6 +199,25 @@ def _diff_before_swap(cur, table: str, tmp: str, qualified: str):
         WHERE COALESCE(o.main_use, '') <> COALESCE(n.main_use, '')
         ORDER BY 1""")
     d["use_changed"] = cur.fetchall()
+    # Import IDs and timestamps are not source attributes. OBJECTID can also
+    # change while the same KAEK/geometry survives, so report it separately.
+    ignored = "ARRAY['geom','gid','synced_at','kaek','objectid','main_use']"
+    cur.execute(f"""
+        SELECT n.kaek, o.objectid, n.objectid,
+               to_jsonb(o) - {ignored}, to_jsonb(n) - {ignored}
+        FROM {tmp} n JOIN {qualified} o USING (kaek)
+        WHERE (to_jsonb(o) - {ignored}) IS DISTINCT FROM (to_jsonb(n) - {ignored})
+           OR o.objectid IS DISTINCT FROM n.objectid
+        ORDER BY n.kaek
+    """)
+    d["attributes_changed"], d["source_ids_changed"] = [], []
+    for kaek, old_id, new_id, old, new in cur.fetchall():
+        changed = {key: {'old': old.get(key), 'new': new.get(key)}
+                   for key in sorted(set(old) | set(new)) if old.get(key) != new.get(key)}
+        if changed:
+            d["attributes_changed"].append({'kaek': kaek, 'fields': changed})
+        if old_id != new_id:
+            d["source_ids_changed"].append((kaek, old_id, new_id))
     return d
 
 
@@ -216,6 +258,23 @@ def write_changes_report(diffs) -> Path:
             more = len(d["use_changed"]) - 30
             parts.append(f"  - Αλλαγή χρήσης ({len(d['use_changed'])}): "
                          + "; ".join(uc) + (f" … +{more} ακόμα" if more > 0 else ""))
+        attribute_changes = d.get('attributes_changed', [])
+        if attribute_changes:
+            parts.append(f"  - Αλλαγές λοιπών πεδίων σε {len(attribute_changes)} ΚΑΕΚ:")
+            for item in attribute_changes[:30]:
+                values = []
+                for field, change in item['fields'].items():
+                    old_value = json.dumps(change['old'], ensure_ascii=False)
+                    new_value = json.dumps(change['new'], ensure_ascii=False)
+                    values.append(f"{field}: {old_value} → {new_value}")
+                parts.append(f"    - {item['kaek']}: " + '; '.join(values))
+            if len(attribute_changes) > 30:
+                parts.append(f"    - … και {len(attribute_changes)-30} ακόμα ΚΑΕΚ")
+        source_ids = d.get('source_ids_changed', [])
+        if source_ids:
+            capped, more = _cap([f"{key}: {old} → {new}" for key, old, new in source_ids])
+            parts.append(f"  - Αλλαγή OBJECTID πηγής με ίδιο ΚΑΕΚ ({len(source_ids)}): "
+                         + '; '.join(capped) + more)
         if parts:
             any_change = True
             lines.append(f"- **{d['table']}**:")
@@ -242,29 +301,31 @@ def write_changes_report(diffs) -> Path:
 
 def sync_layer(conn, table: str, service: str):
     """Returns (success: bool, diff: dict | None)."""
-    import psycopg2.extras
-
     print(f"\n=== {table}  <-  {service} ===")
     fields = get_layer_fields(service)
-    cols = [name.lower() for name, _ in fields]
-    qualified = f"{SCHEMA}.{table}"
-    tmp = f"{SCHEMA}.{table}_new"
-
-    col_ddl = ", ".join(f'"{n.lower()}" {t}' for n, t in fields)
-    insert_cols = ", ".join(f'"{c}"' for c in cols)
-    placeholders = ", ".join(["%s"] * len(cols))
-
-    date_cols = {name.lower() for name, pg_type in fields if pg_type == "timestamptz"}
+    if "kaek" not in {name.lower() for name, _ in fields}:
+        raise FetchError(f"{service}: source metadata is missing KAEK")
 
     rows = []
     for feat in fetch_features(service):
-        props = feat.get("properties", {})
-        geomjson = json.dumps(feat.get("geometry"))
+        props = feat["properties"]
+        missing = [name for name, _ in fields if name not in props]
+        if missing:
+            raise FetchError(f"{service}: source record is missing fields {missing}")
+        geom = feat["geometry"]
+        if geom is None or geom["type"] not in {"Polygon", "MultiPolygon"}:
+            raise FetchError(f"{service}: source record is missing polygon geometry")
+        geomjson = json.dumps(geom)
         row = []
         for name, pg_type in fields:
-            val = props.get(name)
+            val = props[name]
+            if name.lower() == "kaek" and (not isinstance(val, str) or not val.strip()):
+                raise FetchError(f"{service}: source record has missing/invalid KAEK")
             if pg_type == "timestamptz" and val is not None:
-                val = datetime.fromtimestamp(val / 1000.0, tz=timezone.utc)
+                try:
+                    val = datetime.fromtimestamp(val / 1000.0, tz=timezone.utc)
+                except (TypeError, ValueError, OverflowError, OSError) as exc:
+                    raise FetchError(f"{service}: invalid timestamp in {name}") from exc
             row.append(val)
         rows.append(tuple(row) + (geomjson,))
     print(f"  fetched: {len(rows)} features")
@@ -272,54 +333,99 @@ def sync_layer(conn, table: str, service: str):
         print("  nothing fetched — table left untouched")
         return False, None
 
+    try:
+        return _replace_layer(conn, table, fields, rows)
+    except Exception as exc:
+        conn.rollback()
+        raise LoadError(f"Cadastral load rolled back for {SCHEMA}.{table}: {exc}") from exc
+
+
+def _replace_layer(conn, table, fields, rows):
+    """Stage all geometry, then publish without replacing the live relation."""
+    import psycopg2.extras
+
+    if table not in LAYERS:
+        raise LoadError(f"Unknown cadastral destination: {table}")
+    cols = [name.lower() for name, _ in fields]
+    qualified = f"{SCHEMA}.{table}"
+    tmp = "pg_temp.epol_cadastre_stage"
+    col_ddl = ", ".join(f'"{n.lower()}" {t}' for n, t in fields)
+    insert_cols = ", ".join(f'"{c}"' for c in cols)
+    placeholders = ", ".join(["%s"] * len(cols))
+
     with conn.cursor() as cur:
-        cur.execute(f'DROP TABLE IF EXISTS {tmp}')
-        cur.execute(f'CREATE TABLE {tmp} ({col_ddl}, geom geometry(MultiPolygon, 2100))')
+        cur.execute("SET LOCAL lock_timeout = '5s'")
+        cur.execute(f'CREATE TEMP TABLE epol_cadastre_stage ({col_ddl}, '
+                    'geom geometry(MultiPolygon, 2100)) ON COMMIT DROP')
         psycopg2.extras.execute_batch(
             cur,
             f'INSERT INTO {tmp} ({insert_cols}, geom) VALUES ({placeholders}, '
             f'ST_Multi(ST_CollectionExtract(ST_MakeValid('
             f'ST_SetSRID(ST_GeomFromGeoJSON(%s), 2100)), 3)))',
             rows, page_size=200)
-        cur.execute(f'ALTER TABLE {tmp} ADD COLUMN gid serial')
-        cur.execute(f'ALTER TABLE {tmp} ADD COLUMN synced_at timestamptz DEFAULT now()')
-
-        # Diff old vs new before the swap (None on first run)
+        cur.execute(f"""
+            SELECT count(*), count(*) FILTER (
+                WHERE geom IS NULL OR ST_IsEmpty(geom) OR NOT ST_IsValid(geom))
+            FROM {tmp}
+        """)
+        staged_count, bad_geometries = cur.fetchone()
+        if staged_count != len(rows) or bad_geometries:
+            raise LoadError(f"Staged {staged_count}/{len(rows)} rows; "
+                            f"{bad_geometries} empty/invalid polygon geometries")
+        # Lock an existing destination before diff/publication. This also keeps
+        # a concurrent writer from changing the rows between those operations.
+        cur.execute("SELECT to_regclass(%s)", (qualified,))
+        if cur.fetchone()[0] is not None:
+            cur.execute(f'LOCK TABLE {qualified} IN ACCESS EXCLUSIVE MODE')
         diff = _diff_before_swap(cur, table, tmp, qualified)
-
-        # Views on the old table block DROP TABLE. Save their definitions,
-        # drop with CASCADE, recreate after the swap — same transaction, so
-        # a failure rolls everything back (views included).
-        cur.execute("""
-            SELECT DISTINCT n.nspname, c.relname,
-                   pg_get_viewdef(c.oid, true),
-                   obj_description(c.oid, 'pg_class')
-            FROM pg_depend d
-            JOIN pg_rewrite r  ON r.oid = d.objid
-            JOIN pg_class c    ON c.oid = r.ev_class
-            JOIN pg_namespace n ON n.oid = c.relnamespace
-            WHERE d.refobjid = to_regclass(%s) AND c.relkind = 'v'
-              AND c.oid <> d.refobjid
-        """, (qualified,))
-        dep_views = cur.fetchall()
-        if dep_views:
-            names = ", ".join(f"{s}.{v}" for s, v, _, _ in dep_views)
-            print(f"  dependent views (will be recreated): {names}")
-
-        cur.execute(f'DROP TABLE IF EXISTS {qualified} CASCADE')
-        cur.execute(f'ALTER TABLE {tmp} RENAME TO {table}_renaming')
-        cur.execute(f'ALTER TABLE {SCHEMA}."{table}_renaming" RENAME TO "{table}"')
-        cur.execute(f'CREATE INDEX ON {qualified} USING gist (geom)')
-        if "kaek" in cols:
-            cur.execute(f'CREATE INDEX ON {qualified} (kaek)')
-
-        for vschema, vname, vdef, vcomment in dep_views:
-            cur.execute(f'CREATE VIEW "{vschema}"."{vname}" AS {vdef}')
-            if vcomment:
-                cur.execute(f'COMMENT ON VIEW "{vschema}"."{vname}" IS %s', (vcomment,))
+        _publish_staged(cur, table, tmp, fields, len(rows))
     conn.commit()
     print(f"  loaded into {qualified}")
     return True, diff
+
+
+def _publish_staged(cur, table, tmp, fields, expected_count):
+    """Preserve table identity/metadata; fail on unreviewed schema changes."""
+    qualified = f"{SCHEMA}.{table}"
+    cur.execute("SELECT relkind, relrowsecurity, relhasrules FROM pg_class WHERE oid=to_regclass(%s)",
+                (qualified,))
+    existing = cur.fetchone()
+    if existing is None:
+        col_ddl = ", ".join(f'"{n.lower()}" {t}' for n, t in fields)
+        cur.execute(f'CREATE TABLE {qualified} ({col_ddl}, geom geometry(MultiPolygon,2100), '
+                    'gid serial, synced_at timestamptz DEFAULT now())')
+        cur.execute(f'CREATE INDEX ON {qualified} USING gist (geom)')
+        if any(n.lower() == 'kaek' for n, _ in fields):
+            cur.execute(f'CREATE INDEX ON {qualified} (kaek)')
+    else:
+        if existing != ('r', False, False):
+            raise LoadError(f"{qualified}: publication requires an ordinary table without row security or rewrite rules")
+        cur.execute("""
+            SELECT attname, format_type(atttypid,atttypmod), attgenerated, attidentity
+            FROM pg_attribute WHERE attrelid=to_regclass(%s)
+              AND attnum>0 AND NOT attisdropped
+        """, (qualified,))
+        actual = {n: (t, g, i) for n, t, g, i in cur.fetchall()}
+        aliases = {'timestamptz': 'timestamp with time zone'}
+        expected = {n.lower(): (aliases.get(t, t), '', '') for n, t in fields}
+        expected.update(geom=('geometry(MultiPolygon,2100)', '', ''),
+                        gid=('integer', '', ''), synced_at=('timestamp with time zone', '', ''))
+        if actual != expected:
+            raise LoadError(f"{qualified}: source/destination columns differ; review schema before sync")
+        # DELETE could otherwise cascade into application-owned child rows.
+        # Custom triggers also need a reviewed publication policy of their own.
+        cur.execute("""
+            SELECT conname FROM pg_constraint WHERE contype='f' AND confrelid=to_regclass(%s)
+            UNION ALL
+            SELECT tgname FROM pg_trigger WHERE tgrelid=to_regclass(%s) AND NOT tgisinternal
+        """, (qualified, qualified))
+        if cur.fetchall():
+            raise LoadError(f"{qualified}: foreign-key consumers or custom triggers require review before sync")
+        cur.execute(f'DELETE FROM {qualified}')
+    columns = ', '.join(f'"{name.lower()}"' for name, _ in fields) + ', geom'
+    cur.execute(f'INSERT INTO {qualified} ({columns}) SELECT {columns} FROM {tmp}')
+    if cur.rowcount != expected_count:
+        raise LoadError(f"{qualified}: published {cur.rowcount}/{expected_count} staged rows")
 
 
 def report_diff(conn):
@@ -349,8 +455,12 @@ def main():
     targets = {args.table: LAYERS[args.table]} if args.table else LAYERS
 
     if args.dry_run:
-        for t, s in targets.items():
-            print(f"{t}: {count_features(s)} features in Spetses bbox")
+        try:
+            for t, s in targets.items():
+                print(f"{t}: {count_features(s)} features in Spetses bbox")
+        except SyncError as exc:
+            print(f"ERROR: {exc}")
+            sys.exit(1)
         return
 
     if not DB["password"]:
@@ -375,6 +485,9 @@ def main():
         if "kaek_parcels_operating" in targets and ok:
             report_diff(conn)
         sys.exit(0 if ok else 1)
+    except SyncError as exc:
+        print(f"ERROR: {exc}")
+        sys.exit(1)
     finally:
         conn.close()
 

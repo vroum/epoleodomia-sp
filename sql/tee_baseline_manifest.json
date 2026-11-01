@@ -1,0 +1,1728 @@
+{
+  "functions": [
+    "epoleodomia.find_rasters_at_point(numeric,numeric)",
+    "epoleodomia.translate_land_use_codes(character varying)"
+  ],
+  "relations": {
+    "ab_zones_attica": {
+      "columns": {
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "objectid": "integer",
+        "updated_at": "timestamp without time zone",
+        "zone_name": "character varying(255)",
+        "zone_type": "character varying(50)"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "addresses": {
+      "columns": {
+        "addr": "character varying(108)",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Point,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "munic": "character varying(80)",
+        "num": "character varying(10)",
+        "objectid": "integer",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "approved_plan_boundaries": {
+      "columns": {
+        "apof_eidos": "character varying(255)",
+        "apof_theme": "character varying(255)",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fek": "character varying(255)",
+        "fek_file_url": "character varying(2000)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "kall_dhm_name": "character varying(40)",
+        "number_": "character varying(100)",
+        "objectid": "integer",
+        "publ_date": "character varying(10)",
+        "sign_date": "character varying(10)",
+        "title": "character varying(2000)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "archaeological_sites_lines": {
+      "columns": {
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fetched_at": "timestamp without time zone",
+        "foreas": "character varying(500)",
+        "geom": "geometry(LineString,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "name": "character varying(500)",
+        "objectid": "integer",
+        "ota": "character varying(500)",
+        "shape_len": "double precision",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "archaeological_sites_points": {
+      "columns": {
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fetched_at": "timestamp without time zone",
+        "foreas": "character varying(500)",
+        "geom": "geometry(Point,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "name": "character varying(500)",
+        "objectid": "integer",
+        "ota": "character varying(500)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "archaeological_sites_polygons": {
+      "columns": {
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fetched_at": "timestamp without time zone",
+        "foreas": "character varying(500)",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "name": "character varying(500)",
+        "objectid": "integer",
+        "ota": "character varying(500)",
+        "shape_area": "double precision",
+        "shape_len": "double precision",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "archaeological_zones_pl": {
+      "columns": {
+        "apof_eidos": "character varying(255)",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fek": "character varying(255)",
+        "fek_file_url": "character varying(2000)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "kall_dhm_name": "character varying(40)",
+        "key_flag": "integer",
+        "number_": "character varying(100)",
+        "objectid": "integer",
+        "publ_date": "character varying(10)",
+        "sign_date": "character varying(10)",
+        "title": "character varying(2000)",
+        "updated_at": "timestamp without time zone",
+        "zone_name": "character varying(255)",
+        "zone_type": "character varying(255)"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "block_vertices": {
+      "columns": {
+        "apof_eidos": "character varying(255)",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fek": "character varying(255)",
+        "fek_file_url": "character varying(2000)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Point,2100)",
+        "georef_diagram_url": "character varying(2000)",
+        "id": "integer",
+        "initial_diagram_url": "character varying(2000)",
+        "is_deleted": "boolean",
+        "kall_dhm_name": "character varying(40)",
+        "key_auto": "character varying(255)",
+        "key_flag": "integer",
+        "number_": "character varying(100)",
+        "objectid": "integer",
+        "ot_koryf_name": "character varying(50)",
+        "publ_date": "character varying(10)",
+        "sign_date": "character varying(10)",
+        "title": "character varying(2000)",
+        "updated_at": "timestamp without time zone",
+        "x_coord": "double precision",
+        "y_coord": "double precision"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "building_blocks": {
+      "columns": {
+        "apof_eidos": "character varying(255)",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fek": "character varying(255)",
+        "fek_file_url": "character varying(2000)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Polygon,2100)",
+        "georef_diagram_url": "character varying(2000)",
+        "id": "integer",
+        "initial_diagram_url": "character varying(2000)",
+        "is_deleted": "boolean",
+        "kall_dhm_name": "character varying(40)",
+        "key_flag": "integer",
+        "number_": "character varying(100)",
+        "objectid": "integer",
+        "ot_num": "character varying(12)",
+        "publ_date": "character varying(10)",
+        "sign_date": "character varying(10)",
+        "title": "character varying(2000)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "building_lines": {
+      "columns": {
+        "apof_eidos": "character varying(255)",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fek": "character varying(255)",
+        "fek_file_url": "character varying(2000)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(LineString,2100)",
+        "georef_diagram_url": "character varying(2000)",
+        "id": "integer",
+        "initial_diagram_url": "character varying(2000)",
+        "is_deleted": "boolean",
+        "kall_dhm_name": "character varying(40)",
+        "key_flag": "integer",
+        "number_": "character varying(100)",
+        "objectid": "integer",
+        "og_type": "character varying(255)",
+        "prasia_width": "integer",
+        "publ_date": "character varying(10)",
+        "rn": "double precision",
+        "shape_len": "double precision",
+        "sign_date": "character varying(10)",
+        "title": "character varying(2000)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "building_regs_coefficient": {
+      "columns": {
+        "apof_eidos": "character varying(255)",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fek": "character varying(151)",
+        "fek_file_url": "character varying(2000)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "kall_dhm_name": "character varying(40)",
+        "number_": "character varying(100)",
+        "objectid": "integer",
+        "publ_date": "character varying(10)",
+        "sd_comment": "character varying(2000)",
+        "sd_klimakotos": "character varying(10)",
+        "sd_timh": "double precision",
+        "sd_tomeas": "character varying(100)",
+        "sign_date": "character varying(10)",
+        "syntelesths_domhshs": "double precision",
+        "synthiki_txt": "character varying(2000)",
+        "title": "character varying(2000)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "building_regs_coefficient_zones": {
+      "columns": {
+        "apof_eidos": "character varying(200)",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fek": "character varying(50)",
+        "fek_file_url": "character varying(500)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "kall_dhm_name": "character varying(100)",
+        "number_": "character varying(100)",
+        "objectid": "integer",
+        "publ_date": "character varying(20)",
+        "sd_comment": "text",
+        "sd_klimakotos": "character varying(10)",
+        "sd_timh": "double precision",
+        "sd_tomeas": "character varying(100)",
+        "sign_date": "character varying(20)",
+        "title": "text",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "building_regs_coverage": {
+      "columns": {
+        "apof_eidos": "character varying(255)",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fek": "character varying(151)",
+        "fek_file_url": "character varying(2000)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "kall_dhm_name": "character varying(40)",
+        "kalypsi_comment": "character varying(2000)",
+        "kalypsi_pct": "double precision",
+        "max_embado_m2": "double precision",
+        "number_": "character varying(100)",
+        "objectid": "integer",
+        "publ_date": "character varying(10)",
+        "remarks": "character varying(2000)",
+        "sign_date": "character varying(10)",
+        "synt_kalypsis": "character varying(255)",
+        "synthiki_txt": "character varying(2000)",
+        "title": "character varying(2000)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "building_regs_height": {
+      "columns": {
+        "apof_eidos": "character varying(255)",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fek": "character varying(151)",
+        "fek_file_url": "character varying(2000)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "kall_dhm_name": "character varying(40)",
+        "max_height_m": "double precision",
+        "num_orofon": "integer",
+        "number_": "character varying(100)",
+        "objectid": "integer",
+        "oror_max_height_comment": "character varying(2000)",
+        "oror_num_orofon_comment": "character varying(2000)",
+        "publ_date": "character varying(10)",
+        "sign_date": "character varying(10)",
+        "synthiki_txt": "character varying(2000)",
+        "title": "character varying(2000)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "building_regs_lot": {
+      "columns": {
+        "apof_eidos": "character varying(255)",
+        "artiothta_comment": "character varying(2000)",
+        "artiothta_m2": "double precision",
+        "created_at": "timestamp without time zone",
+        "date_pareklisis": "character varying(20)",
+        "deleted_at": "timestamp without time zone",
+        "elax_embado_m2": "double precision",
+        "elax_prosop_m": "double precision",
+        "fek": "character varying(151)",
+        "fek_file_url": "character varying(2000)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "kall_dhm_name": "character varying(40)",
+        "number_": "character varying(100)",
+        "objectid": "integer",
+        "oros_type": "character varying(50)",
+        "prosopsi_comment": "character varying(2000)",
+        "prosopsi_m": "double precision",
+        "publ_date": "character varying(10)",
+        "remarks": "character varying(2000)",
+        "sign_date": "character varying(10)",
+        "synthiki_txt": "character varying(2000)",
+        "title": "character varying(2000)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)"
+      ],
+      "kind": "r"
+    },
+    "building_regs_system": {
+      "columns": {
+        "apof_eidos": "character varying(255)",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fek": "character varying(151)",
+        "fek_file_url": "character varying(2000)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "kall_dhm_name": "character varying(40)",
+        "number_": "character varying(100)",
+        "objectid": "integer",
+        "oik_systima": "character varying(255)",
+        "oik_systima_comment": "character varying(2000)",
+        "publ_date": "character varying(10)",
+        "sign_date": "character varying(10)",
+        "synthiki_txt": "character varying(2000)",
+        "title": "character varying(2000)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "census_blocks_2021": {
+      "columns": {
+        "block_code": "character varying(50)",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Polygon,2100)",
+        "households_2021": "integer",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "objectid": "integer",
+        "pop_2021": "integer",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "changelog": {
+      "columns": {
+        "change_type": "character varying(10)",
+        "changed_at": "timestamp without time zone",
+        "changed_fields": "text[]",
+        "geometry_changed": "boolean",
+        "id": "integer",
+        "new_fek": "text",
+        "new_geom_wkt": "text",
+        "new_values": "jsonb",
+        "objectid": "integer",
+        "old_fek": "text",
+        "old_geom_wkt": "text",
+        "old_values": "jsonb",
+        "record_id": "integer",
+        "sync_run_id": "integer",
+        "table_name": "character varying(100)"
+      },
+      "constraints": [
+        "FOREIGN KEY (sync_run_id) REFERENCES epoleodomia.sync_runs(id)",
+        "PRIMARY KEY (id)"
+      ],
+      "kind": "r"
+    },
+    "expropriation_zones": {
+      "columns": {
+        "apof_eidos": "character varying(255)",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fek": "character varying(255)",
+        "fek_file_url": "character varying(2000)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "kall_dhm_name": "character varying(40)",
+        "key_flag": "integer",
+        "number_": "character varying(100)",
+        "objectid": "integer",
+        "publ_date": "character varying(10)",
+        "sign_date": "character varying(10)",
+        "title": "character varying(2000)",
+        "updated_at": "timestamp without time zone",
+        "zone_name": "character varying(255)"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "fek_no_diagrams": {
+      "columns": {
+        "apof_eidos": "character varying(200)",
+        "apof_theme": "character varying(200)",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "diagram_cat": "character varying(100)",
+        "fek": "character varying(50)",
+        "fek_file_url": "character varying(500)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "number_": "character varying(100)",
+        "objectid": "integer",
+        "publ_date": "character varying(20)",
+        "sign_date": "character varying(20)",
+        "title": "text",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "forest_maps": {
+      "columns": {
+        "area_m2": "double precision",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fetched_at": "timestamp without time zone",
+        "forest_code": "character varying(20)",
+        "forest_type": "character varying(20)",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "kathgoral1": "character varying(20)",
+        "kathgoral2": "character varying(20)",
+        "layer_id": "integer",
+        "nomos": "character varying(20)",
+        "objectid": "integer",
+        "region_name": "character varying(255)",
+        "status": "character varying(255)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "forest_maps_posted_attica_2021": {
+      "columns": {
+        "area_m2": "double precision",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fetched_at": "timestamp without time zone",
+        "forest_type": "character varying(20)",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "kathgoral1": "character varying(20)",
+        "kathgoral2": "character varying(20)",
+        "nomos": "character varying(20)",
+        "objectid": "integer",
+        "ota": "character varying(20)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "forest_maps_posted_pelop_2022": {
+      "columns": {
+        "area_m2": "double precision",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fetched_at": "timestamp without time zone",
+        "forest_type": "character varying(20)",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "kathgoral1": "character varying(20)",
+        "kathgoral2": "character varying(20)",
+        "nomos": "character varying(20)",
+        "objectid": "integer",
+        "ota": "character varying(20)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "historic_sites_lines": {
+      "columns": {
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fetched_at": "timestamp without time zone",
+        "foreas": "character varying(500)",
+        "geom": "geometry(LineString,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "name": "character varying(500)",
+        "objectid": "integer",
+        "ota": "character varying(500)",
+        "shape_len": "double precision",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "historic_sites_points": {
+      "columns": {
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fetched_at": "timestamp without time zone",
+        "foreas": "character varying(500)",
+        "geom": "geometry(Point,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "name": "character varying(500)",
+        "objectid": "integer",
+        "ota": "character varying(500)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "historic_sites_polygons": {
+      "columns": {
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fetched_at": "timestamp without time zone",
+        "foreas": "character varying(500)",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "name": "character varying(500)",
+        "objectid": "integer",
+        "ota": "character varying(500)",
+        "shape_area": "double precision",
+        "shape_len": "double precision",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "land_use_codes": {
+      "columns": {
+        "category": "character varying(50)",
+        "code": "character varying(10)",
+        "description_el": "character varying(255)",
+        "description_en": "character varying(255)",
+        "parent_code": "character varying(10)"
+      },
+      "constraints": [
+        "PRIMARY KEY (code)"
+      ],
+      "kind": "r"
+    },
+    "land_uses_ers": {
+      "columns": {
+        "apof_eidos": "character varying(255)",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "eidikh_coded_delim_values": "character varying(1000)",
+        "fek": "character varying(255)",
+        "fek_file_url": "character varying(2000)",
+        "fetched_at": "timestamp without time zone",
+        "gen_xrhsh_flag": "character varying(255)",
+        "gen_xrhsh_gps": "character varying(255)",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "kall_dhm_name": "character varying(40)",
+        "key_flag": "integer",
+        "number_": "character varying(100)",
+        "objectid": "integer",
+        "per_cat_eid": "character varying(500)",
+        "per_cat_gen": "character varying(255)",
+        "publ_date": "character varying(10)",
+        "remarks": "character varying(1000)",
+        "sign_date": "character varying(10)",
+        "title": "character varying(2000)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "land_uses_gps": {
+      "columns": {
+        "apof_eidos": "character varying(255)",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "eidikh_coded_delim_values": "character varying(1000)",
+        "fek": "character varying(255)",
+        "fek_file_url": "character varying(2000)",
+        "fetched_at": "timestamp without time zone",
+        "gen_xrhsh_flag": "character varying(255)",
+        "gen_xrhsh_gps": "character varying(255)",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "kall_dhm_name": "character varying(40)",
+        "key_flag": "integer",
+        "number_": "character varying(100)",
+        "objectid": "integer",
+        "per_cat_eid": "character varying(500)",
+        "per_cat_gen": "character varying(255)",
+        "publ_date": "character varying(10)",
+        "remarks": "character varying(1000)",
+        "sign_date": "character varying(10)",
+        "title": "character varying(2000)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "monuments_lines": {
+      "columns": {
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fetched_at": "timestamp without time zone",
+        "foreas": "character varying(500)",
+        "geom": "geometry(LineString,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "name": "character varying(500)",
+        "objectid": "integer",
+        "ota": "character varying(500)",
+        "shape_len": "double precision",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "monuments_points": {
+      "columns": {
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fetched_at": "timestamp without time zone",
+        "foreas": "character varying(500)",
+        "geom": "geometry(Point,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "name": "character varying(500)",
+        "objectid": "integer",
+        "ota": "character varying(500)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "monuments_polygons": {
+      "columns": {
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fetched_at": "timestamp without time zone",
+        "foreas": "character varying(500)",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "name": "character varying(500)",
+        "objectid": "integer",
+        "ota": "character varying(500)",
+        "shape_area": "double precision",
+        "shape_len": "double precision",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "municipal_communities_2021": {
+      "columns": {
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "objectid": "integer",
+        "pop_2021": "integer",
+        "updated_at": "timestamp without time zone",
+        "ypes_code": "character varying(20)",
+        "ypes_name": "character varying(255)"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "municipal_units_2021": {
+      "columns": {
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Polygon,2100)",
+        "globalid": "character varying(50)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "objectid": "integer",
+        "pop_2021": "integer",
+        "updated_at": "timestamp without time zone",
+        "ypes_code": "character varying(20)",
+        "ypes_name": "character varying(255)"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "municipalities_2021": {
+      "columns": {
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "objectid": "integer",
+        "pop_2021": "integer",
+        "updated_at": "timestamp without time zone",
+        "ypes_code": "character varying(20)",
+        "ypes_name": "character varying(255)"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "natura_2000": {
+      "columns": {
+        "area_ha": "double precision",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "objectid": "integer",
+        "sitecode": "character varying(50)",
+        "sitename": "character varying(500)",
+        "sitetype": "character varying(50)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "natural_landscapes_points": {
+      "columns": {
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fetched_at": "timestamp without time zone",
+        "foreas": "character varying(500)",
+        "geom": "geometry(Point,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "name": "character varying(500)",
+        "objectid": "integer",
+        "ota": "character varying(500)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "natural_landscapes_polygons": {
+      "columns": {
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fetched_at": "timestamp without time zone",
+        "foreas": "character varying(500)",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "name": "character varying(500)",
+        "objectid": "integer",
+        "ota": "character varying(500)",
+        "shape_area": "double precision",
+        "shape_len": "double precision",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "other_planning_lines": {
+      "columns": {
+        "apof_eidos": "character varying(255)",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fek": "character varying(255)",
+        "fek_file_url": "character varying(2000)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(LineString,2100)",
+        "georef_diagram_url": "character varying(2000)",
+        "id": "integer",
+        "initial_diagram_url": "character varying(2000)",
+        "is_deleted": "boolean",
+        "kall_dhm_name": "character varying(40)",
+        "key_flag": "integer",
+        "number_": "character varying(100)",
+        "objectid": "integer",
+        "pol_gr_type": "character varying(255)",
+        "publ_date": "character varying(10)",
+        "sign_date": "character varying(10)",
+        "title": "character varying(2000)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "other_planning_zones": {
+      "columns": {
+        "apof_eidos": "character varying(255)",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fek": "character varying(151)",
+        "fek_file_url": "character varying(2000)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "kall_dhm_name": "character varying(40)",
+        "key_flag": "integer",
+        "number_": "character varying(100)",
+        "objectid": "integer",
+        "publ_date": "character varying(10)",
+        "sign_date": "character varying(10)",
+        "title": "character varying(2000)",
+        "updated_at": "timestamp without time zone",
+        "zone_name": "character varying(255)",
+        "zone_type": "character varying(255)"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "outside_plan_areas": {
+      "columns": {
+        "apof_eidos": "character varying(255)",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fek": "character varying(151)",
+        "fek_file_url": "character varying(2000)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "kall_dhm_name": "character varying(40)",
+        "key_flag": "integer",
+        "number_": "character varying(100)",
+        "objectid": "integer",
+        "publ_date": "character varying(10)",
+        "sign_date": "character varying(10)",
+        "text": "character varying(255)",
+        "title": "character varying(2000)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "pd_protection_zones": {
+      "columns": {
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fek": "character varying(255)",
+        "fek_file_url": "character varying(2000)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "objectid": "integer",
+        "protection_type": "character varying(255)",
+        "updated_at": "timestamp without time zone",
+        "zone_name": "character varying(255)"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "pedestrian_zones": {
+      "columns": {
+        "apof_eidos": "character varying(255)",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fek": "character varying(255)",
+        "fek_file_url": "character varying(2000)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Polygon,2100)",
+        "georef_diagram_url": "character varying(2000)",
+        "id": "integer",
+        "initial_diagram_url": "character varying(2000)",
+        "is_deleted": "boolean",
+        "kall_dhm_name": "character varying(40)",
+        "key_flag": "integer",
+        "number_": "character varying(100)",
+        "objectid": "integer",
+        "publ_date": "character varying(10)",
+        "pz_xrhsh": "character varying(255)",
+        "sign_date": "character varying(10)",
+        "title": "character varying(2000)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "planning_diagrams": {
+      "columns": {
+        "apof_eidos": "character varying(255)",
+        "comp_diagr_legend_number": "character varying(255)",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fek": "character varying(255)",
+        "fek_file_url": "character varying(2000)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Polygon,2100)",
+        "georef_diagram_url": "character varying(2000)",
+        "ggrs87_diagr_georef_rms": "double precision",
+        "id": "integer",
+        "init_diagr_scale_denominator": "integer",
+        "initial_diagram_url": "character varying(2000)",
+        "is_deleted": "boolean",
+        "number_": "character varying(100)",
+        "objectid": "integer",
+        "publ_date": "character varying(10)",
+        "sign_date": "character varying(10)",
+        "title": "character varying(2000)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "planning_lines": {
+      "columns": {
+        "apof_eidos": "character varying(255)",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fek": "character varying(255)",
+        "fek_file_url": "character varying(2000)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(LineString,2100)",
+        "georef_diagram_url": "character varying(2000)",
+        "id": "integer",
+        "initial_diagram_url": "character varying(2000)",
+        "is_deleted": "boolean",
+        "kall_dhm_name": "character varying(40)",
+        "key_flag": "integer",
+        "number_": "character varying(100)",
+        "objectid": "integer",
+        "prasia_width": "integer",
+        "publ_date": "character varying(10)",
+        "rg_type": "character varying(255)",
+        "road_width": "integer",
+        "sign_date": "character varying(10)",
+        "title": "character varying(2000)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "protected_buildings": {
+      "columns": {
+        "apof_number": "character varying(255)",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "eidosfek": "character varying(500)",
+        "fek": "character varying(521)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Point,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "objectid": "integer",
+        "odos": "character varying(500)",
+        "sign_date": "character varying(10)",
+        "thesi": "character varying(500)",
+        "thesmkat": "character varying(500)",
+        "type": "character varying(1000)",
+        "updated_at": "timestamp without time zone",
+        "x": "double precision",
+        "y": "double precision"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "protection_zones_lines": {
+      "columns": {
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fetched_at": "timestamp without time zone",
+        "foreas": "character varying(500)",
+        "geom": "geometry(LineString,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "name": "character varying(500)",
+        "objectid": "integer",
+        "ota": "character varying(500)",
+        "shape_len": "double precision",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "protection_zones_points": {
+      "columns": {
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fetched_at": "timestamp without time zone",
+        "foreas": "character varying(500)",
+        "geom": "geometry(Point,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "name": "character varying(500)",
+        "objectid": "integer",
+        "ota": "character varying(500)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "protection_zones_polygons": {
+      "columns": {
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fetched_at": "timestamp without time zone",
+        "foreas": "character varying(500)",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "name": "character varying(500)",
+        "objectid": "integer",
+        "ota": "character varying(500)",
+        "shape_area": "double precision",
+        "shape_len": "double precision",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "public_spaces": {
+      "columns": {
+        "apof_eidos": "character varying(255)",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fek": "character varying(255)",
+        "fek_file_url": "character varying(2000)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Polygon,2100)",
+        "georef_diagram_url": "character varying(2000)",
+        "id": "integer",
+        "initial_diagram_url": "character varying(2000)",
+        "is_deleted": "boolean",
+        "kall_dhm_name": "character varying(40)",
+        "key_flag": "integer",
+        "kx_koinoxr_kodikos": "character varying(255)",
+        "kx_koinoxr_type": "character varying(255)",
+        "number_": "character varying(100)",
+        "objectid": "integer",
+        "publ_date": "character varying(10)",
+        "sign_date": "character varying(10)",
+        "title": "character varying(2000)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "raster_catalog": {
+      "columns": {
+        "bands": "integer",
+        "bbox": "geometry(Polygon,2100)",
+        "created_at": "timestamp without time zone",
+        "crs_epsg": "integer",
+        "download_error": "text",
+        "download_status": "character varying(20)",
+        "downloaded_at": "timestamp without time zone",
+        "fek": "character varying(50)",
+        "file_size_bytes": "bigint",
+        "filename": "character varying(255)",
+        "georef_rms": "numeric(10,4)",
+        "height_px": "integer",
+        "id": "integer",
+        "last_checked": "timestamp without time zone",
+        "local_path_georef": "character varying(500)",
+        "local_path_raw": "character varying(500)",
+        "nodata_value": "numeric",
+        "original_scale": "integer",
+        "planning_diagram_objectid": "integer",
+        "resolution_x": "numeric(10,4)",
+        "resolution_y": "numeric(10,4)",
+        "updated_at": "timestamp without time zone",
+        "url_georef": "text",
+        "url_raw": "text",
+        "width_px": "integer"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)"
+      ],
+      "kind": "r"
+    },
+    "settlement_boundaries": {
+      "columns": {
+        "apof_eidos": "character varying(255)",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fek": "character varying(151)",
+        "fek_file_url": "character varying(2000)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "kall_dhm_name": "character varying(40)",
+        "key_flag": "integer",
+        "name": "character varying(255)",
+        "number_": "character varying(100)",
+        "objectid": "integer",
+        "publ_date": "character varying(10)",
+        "sign_date": "character varying(10)",
+        "title": "character varying(2000)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "settlements_2021": {
+      "columns": {
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "elstat_code": "character varying(20)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Point,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "name": "character varying(255)",
+        "objectid": "integer",
+        "pop_2021": "integer",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "shorelines": {
+      "columns": {
+        "apof_eidos": "character varying(255)",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fek": "character varying(255)",
+        "fek_file_url": "character varying(2000)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(LineString,2100)",
+        "georef_diagram_url": "character varying(2000)",
+        "id": "integer",
+        "initial_diagram_url": "character varying(2000)",
+        "is_deleted": "boolean",
+        "kall_dhm_name": "character varying(40)",
+        "key_flag": "integer",
+        "line_name": "character varying(255)",
+        "line_type_aigial_paralia": "character varying(255)",
+        "number_": "character varying(100)",
+        "objectid": "integer",
+        "publ_date": "character varying(10)",
+        "sign_date": "character varying(10)",
+        "title": "character varying(2000)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "streams": {
+      "columns": {
+        "apof_eidos": "character varying(255)",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fek": "character varying(151)",
+        "fek_file_url": "character varying(2000)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(LineString,2100)",
+        "georef_diagram_url": "character varying(2000)",
+        "id": "integer",
+        "initial_diagram_url": "character varying(2000)",
+        "is_deleted": "boolean",
+        "kall_dhm_name": "character varying(40)",
+        "key_flag": "integer",
+        "line_name": "character varying(255)",
+        "number_": "character varying(100)",
+        "objectid": "integer",
+        "publ_date": "character varying(10)",
+        "sign_date": "character varying(10)",
+        "title": "character varying(2000)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "streams_environmental": {
+      "columns": {
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(LineString,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "name": "character varying(255)",
+        "objectid": "integer",
+        "stream_type": "character varying(255)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "sync_log": {
+      "columns": {
+        "error_message": "text",
+        "id": "integer",
+        "layer_id": "integer",
+        "records_fetched": "integer",
+        "service_name": "character varying(255)",
+        "status": "character varying(50)",
+        "sync_completed_at": "timestamp without time zone",
+        "sync_started_at": "timestamp without time zone",
+        "table_name": "character varying(100)"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)"
+      ],
+      "kind": "r"
+    },
+    "sync_runs": {
+      "columns": {
+        "completed_at": "timestamp without time zone",
+        "error_message": "text",
+        "id": "integer",
+        "mode": "character varying(20)",
+        "records_deleted": "integer",
+        "records_new": "integer",
+        "records_updated": "integer",
+        "started_at": "timestamp without time zone",
+        "status": "character varying(20)",
+        "tables_synced": "integer"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)"
+      ],
+      "kind": "r"
+    },
+    "urban_units": {
+      "columns": {
+        "apof_eidos": "character varying(255)",
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fek": "character varying(151)",
+        "fek_file_url": "character varying(2000)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "kall_dhm_name": "character varying(40)",
+        "key_flag": "integer",
+        "number_": "character varying(100)",
+        "objectid": "integer",
+        "pl_area_type": "character varying(255)",
+        "publ_date": "character varying(10)",
+        "sign_date": "character varying(10)",
+        "title": "character varying(2000)",
+        "updated_at": "timestamp without time zone"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    },
+    "v_addresses_with_blocks": {
+      "columns": {
+        "address": "character varying(108)",
+        "block_fek": "character varying(255)",
+        "block_number": "character varying(12)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Point,2100)",
+        "id": "integer",
+        "municipality": "character varying(80)",
+        "number": "character varying(10)"
+      },
+      "constraints": [],
+      "kind": "v"
+    },
+    "v_building_blocks_regulations": {
+      "columns": {
+        "building_coefficient": "double precision",
+        "building_system": "character varying(255)",
+        "coefficient_comment": "character varying",
+        "coefficient_source": "text",
+        "coverage_pct": "character varying(255)",
+        "coverage_remarks": "character varying(2000)",
+        "date_pareklisis": "character varying(20)",
+        "fek": "character varying(255)",
+        "fek_file_url": "character varying(2000)",
+        "geom": "geometry(Polygon,2100)",
+        "height_comment": "character varying(2000)",
+        "id": "integer",
+        "kall_dhm_name": "character varying(40)",
+        "land_use_general": "character varying(255)",
+        "land_use_remarks": "character varying(1000)",
+        "land_use_specific": "character varying(500)",
+        "lot_remarks": "character varying(2000)",
+        "max_height_m": "double precision",
+        "min_frontage_m": "double precision",
+        "min_lot_size_m2": "double precision",
+        "num_orofon": "integer",
+        "objectid": "integer",
+        "oros_type": "character varying(50)",
+        "ot_num": "character varying(12)",
+        "publ_date": "character varying(10)",
+        "sd_klimakotos": "character varying(10)",
+        "sd_tomeas": "character varying(100)"
+      },
+      "constraints": [],
+      "kind": "v"
+    },
+    "v_fek_changes": {
+      "columns": {
+        "change_type": "character varying(10)",
+        "changed_at": "timestamp without time zone",
+        "new_fek": "text",
+        "objectid": "integer",
+        "old_fek": "text",
+        "table_name": "character varying(100)"
+      },
+      "constraints": [],
+      "kind": "v"
+    },
+    "v_fek_references": {
+      "columns": {
+        "apof_eidos": "character varying(255)",
+        "fek": "character varying",
+        "fek_file_url": "character varying(2000)",
+        "kall_dhm_name": "character varying",
+        "number_": "character varying(100)",
+        "publ_date": "character varying(10)",
+        "sign_date": "character varying(10)",
+        "title": "character varying(2000)"
+      },
+      "constraints": [],
+      "kind": "v"
+    },
+    "v_geometry_changes": {
+      "columns": {
+        "change_type": "character varying(10)",
+        "changed_at": "timestamp without time zone",
+        "new_geom_wkt": "text",
+        "objectid": "integer",
+        "old_geom_wkt": "text",
+        "sync_run_date": "timestamp without time zone",
+        "table_name": "character varying(100)"
+      },
+      "constraints": [],
+      "kind": "v"
+    },
+    "v_land_uses_summary": {
+      "columns": {
+        "category_general": "character varying(255)",
+        "category_specific": "character varying(500)",
+        "fek": "character varying(255)",
+        "general_use": "character varying(255)",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "municipality": "character varying(40)",
+        "remarks": "character varying(1000)",
+        "source": "text"
+      },
+      "constraints": [],
+      "kind": "v"
+    },
+    "v_planning_lines_all": {
+      "columns": {
+        "fek": "character varying(255)",
+        "geom": "geometry(LineString,2100)",
+        "line_type": "text",
+        "municipality": "character varying(40)",
+        "prasia_width": "integer",
+        "road_width": "integer",
+        "subtype": "character varying(255)"
+      },
+      "constraints": [],
+      "kind": "v"
+    },
+    "v_protected_areas": {
+      "columns": {
+        "fek": "character varying",
+        "geom": "geometry(Polygon,2100)",
+        "municipality": "character varying",
+        "name": "character varying",
+        "protection_type": "text",
+        "subtype": "character varying"
+      },
+      "constraints": [],
+      "kind": "v"
+    },
+    "v_rasters_by_fek": {
+      "columns": {
+        "downloaded": "bigint",
+        "failed": "bigint",
+        "fek": "character varying(50)",
+        "pending": "bigint",
+        "total_rasters": "bigint",
+        "total_size_mb": "numeric"
+      },
+      "constraints": [],
+      "kind": "v"
+    },
+    "v_rasters_downloaded": {
+      "columns": {
+        "bbox_wkt": "text",
+        "crs_epsg": "integer",
+        "downloaded_at": "timestamp without time zone",
+        "fek": "character varying(50)",
+        "file_size_bytes": "bigint",
+        "filename": "character varying(255)",
+        "georef_rms": "numeric(10,4)",
+        "height_px": "integer",
+        "id": "integer",
+        "local_path_georef": "character varying(500)",
+        "meters_per_pixel": "numeric(10,4)",
+        "original_scale": "integer",
+        "width_px": "integer"
+      },
+      "constraints": [],
+      "kind": "v"
+    },
+    "v_rasters_failed": {
+      "columns": {
+        "download_error": "text",
+        "fek": "character varying(50)",
+        "filename": "character varying(255)",
+        "id": "integer",
+        "last_checked": "timestamp without time zone",
+        "url_georef": "text"
+      },
+      "constraints": [],
+      "kind": "v"
+    },
+    "v_rasters_pending": {
+      "columns": {
+        "fek": "character varying(50)",
+        "filename": "character varying(255)",
+        "georef_rms": "numeric(10,4)",
+        "id": "integer",
+        "original_scale": "integer",
+        "url_georef": "text"
+      },
+      "constraints": [],
+      "kind": "v"
+    },
+    "v_recent_changes": {
+      "columns": {
+        "change_type": "character varying(10)",
+        "changed_at": "timestamp without time zone",
+        "changed_fields": "text[]",
+        "new_fek": "text",
+        "objectid": "integer",
+        "sync_run_date": "timestamp without time zone",
+        "table_name": "character varying(100)"
+      },
+      "constraints": [],
+      "kind": "v"
+    },
+    "v_regulation_changes": {
+      "columns": {
+        "change_type": "character varying(10)",
+        "changed_at": "timestamp without time zone",
+        "changed_fields": "text[]",
+        "new_fek": "text",
+        "new_values": "jsonb",
+        "objectid": "integer",
+        "old_fek": "text",
+        "old_values": "jsonb",
+        "table_name": "character varying(100)"
+      },
+      "constraints": [],
+      "kind": "v"
+    },
+    "v_sync_run_summary": {
+      "columns": {
+        "completed_at": "timestamp without time zone",
+        "deletes": "bigint",
+        "inserts": "bigint",
+        "mode": "character varying(20)",
+        "started_at": "timestamp without time zone",
+        "status": "character varying(20)",
+        "sync_run_id": "integer",
+        "tables_affected": "bigint",
+        "updates": "bigint"
+      },
+      "constraints": [],
+      "kind": "v"
+    },
+    "v_sync_status": {
+      "columns": {
+        "freshness": "text",
+        "layer_id": "integer",
+        "records_fetched": "integer",
+        "service_name": "character varying(255)",
+        "status": "character varying(50)",
+        "sync_completed_at": "timestamp without time zone",
+        "table_name": "character varying(100)"
+      },
+      "constraints": [],
+      "kind": "v"
+    },
+    "zoe_zones": {
+      "columns": {
+        "created_at": "timestamp without time zone",
+        "deleted_at": "timestamp without time zone",
+        "fek": "character varying(255)",
+        "fek_file_url": "character varying(2000)",
+        "fetched_at": "timestamp without time zone",
+        "geom": "geometry(Polygon,2100)",
+        "id": "integer",
+        "is_deleted": "boolean",
+        "objectid": "integer",
+        "updated_at": "timestamp without time zone",
+        "zone_name": "character varying(255)",
+        "zone_type": "character varying(255)"
+      },
+      "constraints": [
+        "PRIMARY KEY (id)",
+        "UNIQUE (objectid)"
+      ],
+      "kind": "r"
+    }
+  }
+}

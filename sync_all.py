@@ -5,7 +5,7 @@ Usage:
     python sync_all.py                    # Sync all layers
     python sync_all.py --service SERVICE  # Sync specific service
     python sync_all.py --table TABLE      # Sync specific table
-    python sync_all.py --init             # Initialize database (run DDL)
+    python sync_all.py --init             # Read-only setup preview (never sync)
     python sync_all.py --test             # Test with one layer only
     python sync_all.py --rasters          # Also download raster diagrams
     python sync_all.py --rasters-only     # Only sync rasters
@@ -14,7 +14,6 @@ Usage:
 import argparse
 import hashlib
 import json
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -23,10 +22,11 @@ from typing import Optional
 from config import SERVICES, DATABASE
 from fetch_layer import fetch_all_layer_data, fetch_layer_count
 from load_postgis import (load_geojson_to_table, load_geojson_with_tracking,
-                          log_sync, execute_sql_file, get_connection,
+                          log_sync, get_connection,
                           start_sync_run, complete_sync_run,
                           post_sync_recalculate)
 from logger import SyncLogger
+from sync_safety import LoadError
 
 
 REPLACE_ONLY_TABLES = {
@@ -68,13 +68,9 @@ def _save_replace_hash(table_name: str, content_hash: str):
 
 
 def init_database():
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    ddl_path = os.path.join(script_dir, "sql", "001_create_tables.sql")
-    if not os.path.exists(ddl_path):
-        print(f"Error: DDL script not found at {ddl_path}")
-        return False
-    print("Initializing database...")
-    return execute_sql_file(ddl_path)
+    """Compatibility entry point: inspect only, never replay legacy DDL."""
+    from database_setup import main as setup_main
+    return setup_main([]) == 0
 
 
 def sync_layer(service_name, service_url, layer_config, dry_run=False, track_changes=False, sync_run_id=None, logger=None):
@@ -87,6 +83,7 @@ def sync_layer(service_name, service_url, layer_config, dry_run=False, track_cha
     print(f"{'='*60}")
 
     sync_started = datetime.now()
+    feature_count = 0
 
     try:
         if dry_run:
@@ -110,6 +107,9 @@ def sync_layer(service_name, service_url, layer_config, dry_run=False, track_cha
         print(f"  Loading {feature_count} features to PostGIS...")
         if track_changes and table_name not in REPLACE_ONLY_TABLES:
             stats = load_geojson_with_tracking(geojson, table_name, sync_run_id=sync_run_id)
+            accounted = stats['new'] + stats['updated'] + stats['unchanged']
+            if stats.get('errors') or accounted != feature_count:
+                raise LoadError(f"Loader did not account for all {feature_count} source records")
             inserted = stats['new'] + stats['updated']
             changes = stats.get('changes', [])
         else:
@@ -120,6 +120,8 @@ def sync_layer(service_name, service_url, layer_config, dry_run=False, track_cha
                 content_hash = _replace_content_hash(geojson)
                 prev_hash = _load_replace_hashes().get(table_name)
             inserted = load_geojson_to_table(geojson, table_name)
+            if inserted != feature_count:
+                raise LoadError(f"Loaded {inserted}/{feature_count} source records")
             if content_hash and content_hash == prev_hash:
                 # Same content as last sync — replaced, but nothing changed
                 print("  Content identical to previous sync — reporting as unchanged")
@@ -147,15 +149,26 @@ def sync_layer(service_name, service_url, layer_config, dry_run=False, track_cha
 
     except Exception as e:
         print(f"  Error: {e}")
-        log_sync(table_name=table_name, service_name=service_name, layer_id=layer_id,
-                 records_fetched=0, status="error", error_message=str(e),
-                 sync_started=sync_started, sync_completed=datetime.now())
+        if not dry_run:
+            log_sync(table_name=table_name, service_name=service_name, layer_id=layer_id,
+                     records_fetched=0, status="error", error_message=str(e),
+                     sync_started=sync_started, sync_completed=datetime.now())
         if logger:
             logger.log_error(str(e), table_name)
+            logger.log_table_result(table_name, layer_id, stats={'errors': 1},
+                fetched=feature_count, status='error', error_message=str(e),
+                duration_sec=(datetime.now() - sync_started).total_seconds())
         return {'success': False, 'stats': {}, 'status': 'error', 'error': str(e)}
 
 
-def sync_service(service_name, dry_run=False, track_changes=False, sync_run_id=None, logger=None):
+def _accumulate_stats(aggregate, result):
+    if aggregate is not None and result['success']:
+        aggregate['tables_synced'] = aggregate.get('tables_synced', 0) + 1
+        for field in ('new', 'updated', 'deleted'):
+            aggregate[field] = aggregate.get(field, 0) + result.get('stats', {}).get(field, 0)
+
+
+def sync_service(service_name, dry_run=False, track_changes=False, sync_run_id=None, logger=None, aggregate=None):
     if service_name not in SERVICES:
         print(f"Error: Unknown service '{service_name}'")
         return {"success": 0, "failed": 0, "empty": 0}
@@ -164,6 +177,7 @@ def sync_service(service_name, dry_run=False, track_changes=False, sync_run_id=N
     if logger: logger.log_service_start(service_name)
     for layer_config in service["layers"]:
         result = sync_layer(service_name, service["url"], layer_config, dry_run, track_changes, sync_run_id, logger)
+        _accumulate_stats(aggregate, result)
         if result['success']:
             if result['status'] == 'empty': results["empty"] += 1
             results["success"] += 1
@@ -172,22 +186,23 @@ def sync_service(service_name, dry_run=False, track_changes=False, sync_run_id=N
     return results
 
 
-def sync_table(table_name, dry_run=False, track_changes=False, sync_run_id=None, logger=None):
+def sync_table(table_name, dry_run=False, track_changes=False, sync_run_id=None, logger=None, aggregate=None):
     for service_name, service in SERVICES.items():
         for layer_config in service["layers"]:
             if layer_config["table"] == table_name:
                 if logger: logger.log_service_start(service_name)
                 result = sync_layer(service_name, service["url"], layer_config, dry_run, track_changes, sync_run_id, logger)
+                _accumulate_stats(aggregate, result)
                 return result['success']
     print(f"Error: Table '{table_name}' not found in configuration")
     return False
 
 
-def sync_all(dry_run=False, track_changes=False, sync_run_id=None, logger=None):
+def sync_all(dry_run=False, track_changes=False, sync_run_id=None, logger=None, aggregate=None):
     total = {"success": 0, "failed": 0, "empty": 0}
     for service_name in SERVICES:
         print(f"\n{'#'*60}\n# SERVICE: {service_name}\n{'#'*60}")
-        results = sync_service(service_name, dry_run, track_changes, sync_run_id, logger)
+        results = sync_service(service_name, dry_run, track_changes, sync_run_id, logger, aggregate)
         for k in total: total[k] += results[k]
     return total
 
@@ -209,7 +224,7 @@ def test_connection():
             if cur.fetchone()[0] > 0:
                 print(f"  Schema '{DATABASE['schema']}' exists")
             else:
-                print(f"  Warning: Schema '{DATABASE['schema']}' does not exist\n  Run with --init to create tables")
+                print(f"  Schema '{DATABASE['schema']}' does not exist\n  Review python database_setup.py before setting up tables")
         conn.close()
         return True
     except Exception as e:
@@ -219,7 +234,7 @@ def test_connection():
 
 def main():
     parser = argparse.ArgumentParser(description="Sync TEE ArcGIS data to PostGIS")
-    parser.add_argument("--init", action="store_true", help="Initialize database (create tables)")
+    parser.add_argument("--init", action="store_true", help="Read-only setup preview; use database_setup.py --apply for reviewed changes")
     parser.add_argument("--service", type=str, help="Sync specific service only")
     parser.add_argument("--table", type=str, help="Sync specific table only")
     parser.add_argument("--test", action="store_true", help="Test mode: sync building_blocks only")
@@ -232,6 +247,10 @@ def main():
     parser.add_argument("--rasters-only", action="store_true", help="Only sync raster diagrams")
     parser.add_argument("--rasters-parallel", type=int, default=4, help="Parallel raster downloads (default: 4)")
     args = parser.parse_args()
+    if args.init:
+        if any((args.service, args.table, args.test, args.track, args.list, args.rasters, args.rasters_only)):
+            parser.error("--init is a standalone read-only setup preview; do not combine it with sync modes")
+        sys.exit(0 if init_database() else 1)
 
     print(f"{'='*60}\nTEE ArcGIS to PostGIS Sync\nStarted at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{'='*60}")
 
@@ -255,15 +274,12 @@ def main():
     if not test_connection():
         print("\nFailed to connect. Check configuration."); sys.exit(1)
 
-    if args.init:
-        sys.exit(0 if init_database() else 1)
-
     sync_run_id = None
     mode = 'table' if args.table else ('service' if args.service else ('test' if args.test else 'full'))
     if args.track and not args.dry_run:
         sync_run_id = start_sync_run(mode)
         if sync_run_id: print(f"\nSync run #{sync_run_id} started (changelog enabled)")
-        else: print("\nNote: Changelog not set up — run sql/004_create_changelog.sql first")
+        else: print("\nNote: Changelog not set up — review python database_setup.py")
 
     logger = None
     if not args.no_log and not args.dry_run:
@@ -271,30 +287,30 @@ def main():
         logger.log_start()
         print(f"\nLog files: {logger.log_file}")
 
-    total_stats = {'new': 0, 'updated': 0, 'deleted': 0}
+    total_stats = {'new': 0, 'updated': 0, 'deleted': 0, 'tables_synced': 0}
 
     try:
         if args.test:
             print("\nTest mode: syncing building_blocks only")
-            success = sync_table("building_blocks", args.dry_run, args.track, sync_run_id, logger)
+            success = sync_table("building_blocks", args.dry_run, args.track, sync_run_id, logger, total_stats)
             if sync_run_id: complete_sync_run(sync_run_id, total_stats, 'success' if success else 'error')
             if logger: logger.log_complete('success' if success else 'error')
             sys.exit(0 if success else 1)
 
         if args.table:
-            success = sync_table(args.table, args.dry_run, args.track, sync_run_id, logger)
+            success = sync_table(args.table, args.dry_run, args.track, sync_run_id, logger, total_stats)
             if sync_run_id: complete_sync_run(sync_run_id, total_stats, 'success' if success else 'error')
             if logger: logger.log_complete('success' if success else 'error')
             sys.exit(0 if success else 1)
 
         if args.service:
-            results = sync_service(args.service, args.dry_run, args.track, sync_run_id, logger)
+            results = sync_service(args.service, args.dry_run, args.track, sync_run_id, logger, total_stats)
             print_summary(results)
             if sync_run_id: complete_sync_run(sync_run_id, total_stats, 'success' if results["failed"]==0 else 'error')
             if logger: logger.log_complete('success' if results["failed"]==0 else 'error')
             sys.exit(0 if results["failed"]==0 else 1)
 
-        results = sync_all(args.dry_run, args.track, sync_run_id, logger)
+        results = sync_all(args.dry_run, args.track, sync_run_id, logger, total_stats)
         if sync_run_id: complete_sync_run(sync_run_id, total_stats, 'success' if results["failed"]==0 else 'error')
         if logger: logger.log_complete('success' if results["failed"]==0 else 'error')
         print_summary(results)

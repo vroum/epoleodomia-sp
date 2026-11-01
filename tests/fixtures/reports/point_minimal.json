@@ -1,0 +1,17 @@
+{
+  "description": "Synthetic point report with available regulations and no feature matches; EMSY source is unavailable.",
+  "mode": "point", "point": [420000, 4120000], "parcel": null,
+  "oroi": {
+    "found": true, "ot_num": null, "xriseis": "TEST USE",
+    "diatagmata_entaxis": [], "diatagmata_oron": [], "tomeis": [],
+    "egkriseis": ["Συμβούλιο Αρχιτεκτονικής", "Υπηρεσία Νεωτέρων Μνημείων"],
+    "loipoi_periorismoi": null, "loipa": [], "plimmyra": null, "kata_parekklisi": null
+  },
+  "shore": {"found": false, "lines": []},
+  "archeo": {"found": false, "in_protection_zone": false},
+  "church": {"found": false},
+  "natura": {"in_natura": false, "in_forest": false},
+  "remata": {"oikismos_lines": [], "tps_found": false, "other_found": false},
+  "ydro": {"available": false, "inside": [], "nearest": null},
+  "inside_plan": true
+}

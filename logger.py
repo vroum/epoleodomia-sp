@@ -75,7 +75,7 @@ class SyncLogger:
             "config": {"database": f"{DATABASE['host']}:{DATABASE['port']}/{DATABASE['database']}",
                        "schema": DATABASE["schema"], "area": "Spetses Island"},
             "services": [], "tables": [],
-            "summary": {"tables_synced": 0, "tables_with_data": 0, "tables_empty": 0,
+            "summary": {"tables_synced": 0, "tables_failed": 0, "tables_with_data": 0, "tables_empty": 0,
                         "total_new": 0, "total_updated": 0, "total_deleted": 0,
                         "total_unchanged": 0, "total_errors": 0, "duration_sec": 0}
         }
@@ -116,13 +116,17 @@ class SyncLogger:
         self._write_log("-" * 80)
         self._write_log("")
 
-    def log_table_result(self, table_name, layer_id, stats, changes=None, duration_sec=0, fetched=0, status='success'):
+    def log_table_result(self, table_name, layer_id, stats, changes=None, duration_sec=0, fetched=0, status='success', error_message=None):
         if not self.enabled: return
-        self.json_data["summary"]["tables_synced"] += 1
-        if status == 'empty' or fetched == 0:
-            self.json_data["summary"]["tables_empty"] += 1
+        if status == 'error':
+            stats = dict(stats, errors=max(1, stats.get('errors', 0)))
+            self.json_data["summary"]["tables_failed"] += 1
         else:
-            self.json_data["summary"]["tables_with_data"] += 1
+            self.json_data["summary"]["tables_synced"] += 1
+            if status == 'empty' or fetched == 0:
+                self.json_data["summary"]["tables_empty"] += 1
+            else:
+                self.json_data["summary"]["tables_with_data"] += 1
         for key in ('new', 'updated', 'deleted', 'unchanged', 'errors'):
             self.json_data["summary"][f"total_{key}"] += stats.get(key, 0)
 
@@ -131,7 +135,7 @@ class SyncLogger:
             "fetched": fetched, "new": stats.get('new',0), "updated": stats.get('updated',0),
             "deleted": stats.get('deleted',0), "unchanged": stats.get('unchanged',0),
             "errors": stats.get('errors',0), "duration_sec": round(duration_sec, 2),
-            "status": status, "changes": changes or []
+            "status": status, "changes": changes or [], "error_message": error_message
         })
 
         self._write_log(f"[{self._time_str()}] TABLE: {table_name} (Layer {layer_id})")
@@ -212,6 +216,8 @@ class SyncLogger:
         self._write_log(f"Total tables synced: {s['tables_synced']}")
         self._write_log(f"  - With data: {s['tables_with_data']}")
         self._write_log(f"  - Empty: {s['tables_empty']}")
+        if s['tables_failed']:
+            self._write_log(f"  - Failed: {s['tables_failed']}")
         self._write_log("")
         if s['total_new'] + s['total_updated'] + s['total_deleted'] > 0 or self.mode == 'track':
             self._write_log("Total changes:")
@@ -314,6 +320,9 @@ class SyncLogger:
             for t in errors:
                 label = DIGEST_LABELS.get(t["name"], t["name"])
                 lines.append(f"- {label} (`{t['name']}`) — απέτυχε το sync")
+                if t.get('error_message'):
+                    reason = ' '.join(t['error_message'].splitlines())
+                    lines.append(f"    - {reason}")
 
         if raster_results:
             lines.append("")

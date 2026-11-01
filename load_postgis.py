@@ -8,24 +8,27 @@ import json
 import psycopg2
 from typing import Dict, List, Any, Optional
 from datetime import datetime
+from pathlib import Path
 
 from config import DATABASE, FIELD_MAPPINGS
+from sync_safety import LoadError, feature_objectid, validate_features
+from sync_geometry import geometry_changes
 
 
 def get_connection():
     """Get a database connection using config settings."""
-    return psycopg2.connect(
-        host=DATABASE["host"],
-        port=DATABASE["port"],
-        database=DATABASE["database"],
-        user=DATABASE["user"],
-        password=DATABASE["password"],
-    )
+    return psycopg2.connect(**{k: v for k, v in DATABASE.items() if k != "schema"})
+
+
+def _refresh_derived_catalog(cur, schema, table_name):
+    if schema == 'epoleodomia' and table_name == 'planning_diagrams':
+        statement = Path(__file__).with_name('sql').joinpath('006_refresh_raster_catalog.sql')
+        cur.execute(statement.read_text(encoding='utf-8'))
 
 
 def get_table_columns(conn, schema: str, table_name: str) -> List[str]:
     """
-    Get column names for a table (excluding id, geom, fetched_at, tracking columns).
+    Get writable source columns, excluding generated/identity and managed fields.
 
     Args:
         conn: Database connection
@@ -41,6 +44,8 @@ def get_table_columns(conn, schema: str, table_name: str) -> List[str]:
             FROM information_schema.columns
             WHERE table_schema = %s
               AND table_name = %s
+              AND is_generated = 'NEVER'
+              AND is_identity = 'NO'
               AND column_name NOT IN ('id', 'geom', 'fetched_at', 'created_at', 'updated_at', 'is_deleted', 'deleted_at')
             ORDER BY ordinal_position
         """, (schema, table_name))
@@ -129,7 +134,7 @@ def geometry_to_wkt(geom: Dict) -> Optional[str]:
 
 
 def check_tracking_columns(conn, schema: str, table_name: str) -> bool:
-    """Check if table has tracking columns, add them if not."""
+    """Require managed tracking columns without doing DDL in a data sync."""
     with conn.cursor() as cur:
         cur.execute("""
             SELECT column_name
@@ -139,16 +144,11 @@ def check_tracking_columns(conn, schema: str, table_name: str) -> bool:
         """, (schema, table_name))
         existing = {row[0] for row in cur.fetchall()}
 
-        if 'created_at' not in existing:
-            cur.execute(f'ALTER TABLE {schema}."{table_name}" ADD COLUMN created_at TIMESTAMP DEFAULT NOW()')
-        if 'updated_at' not in existing:
-            cur.execute(f'ALTER TABLE {schema}."{table_name}" ADD COLUMN updated_at TIMESTAMP')
-        if 'is_deleted' not in existing:
-            cur.execute(f'ALTER TABLE {schema}."{table_name}" ADD COLUMN is_deleted BOOLEAN DEFAULT FALSE')
-        if 'deleted_at' not in existing:
-            cur.execute(f'ALTER TABLE {schema}."{table_name}" ADD COLUMN deleted_at TIMESTAMP')
-
-        conn.commit()
+        missing = {'created_at', 'updated_at', 'is_deleted', 'deleted_at'} - existing
+        if missing:
+            raise LoadError(f'Missing tracking columns in {schema}.{table_name}: '
+                            + ', '.join(sorted(missing))
+                            + '. Review database_setup.py with the schema administrator before syncing.')
         return True
 
 
@@ -172,11 +172,14 @@ def load_geojson_to_table(
 
     Returns:
         Number of records inserted/updated
+
+    Raises:
+        SyncError for invalid input; LoadError if the entire data load rolls back.
     """
     if schema is None:
         schema = DATABASE["schema"]
 
-    features = geojson.get("features", [])
+    features = validate_features(geojson, require_unique_ids=not truncate)
     if not features:
         print(f"  No features to load into {schema}.{table_name}")
         return 0
@@ -187,13 +190,13 @@ def load_geojson_to_table(
         columns = get_table_columns(conn, schema, table_name)
 
         if not columns:
-            print(f"  Error: Could not get columns for {schema}.{table_name}")
-            return 0
+            raise LoadError(f"Could not get columns for {schema}.{table_name}")
 
         with conn.cursor() as cur:
             if truncate:
-                # Original behavior: truncate and insert
-                cur.execute(f'TRUNCATE TABLE {schema}."{table_name}" RESTART IDENTITY')
+                # Replace all source rows, including legitimate duplicate IDs.
+                # Internal import IDs continue; resetting sequences is admin work.
+                cur.execute(f'TRUNCATE TABLE {schema}."{table_name}" CONTINUE IDENTITY')
 
                 # Prepare insert statement
                 col_list = ", ".join(columns)
@@ -206,7 +209,6 @@ def load_geojson_to_table(
 
                 # Process features
                 inserted = 0
-                errors = 0
 
                 for feature in features:
                     props = feature.get("properties", {})
@@ -231,16 +233,12 @@ def load_geojson_to_table(
                         cur.execute(insert_sql, row)
                         inserted += 1
                     except Exception as e:
-                        errors += 1
-                        if errors <= 3:
-                            print(f"  Error inserting row: {e}")
+                        raise LoadError(f"Error inserting source record: {e}") from e
 
+                _refresh_derived_catalog(cur, schema, table_name)
                 conn.commit()
 
-                if errors > 0:
-                    print(f"  Inserted {inserted} records with {errors} errors")
-                else:
-                    print(f"  Inserted {inserted} records")
+                print(f"  Inserted {inserted} records")
 
                 return inserted
 
@@ -252,8 +250,8 @@ def load_geojson_to_table(
                 incoming_objectids = set()
                 for feature in features:
                     props = feature.get("properties", {})
-                    oid = props.get("OBJECTID") or props.get("objectid") or props.get("OBJECTID_1")
-                    if oid:
+                    oid = feature_objectid(props)
+                    if oid is not None:
                         incoming_objectids.add(oid)
 
                 # Build upsert statement
@@ -276,8 +274,6 @@ def load_geojson_to_table(
                 '''
 
                 inserted = 0
-                updated = 0
-                errors = 0
                 now = datetime.now()
 
                 for feature in features:
@@ -308,9 +304,7 @@ def load_geojson_to_table(
                         if cur.rowcount > 0:
                             inserted += 1
                     except Exception as e:
-                        errors += 1
-                        if errors <= 3:
-                            print(f"  Error upserting row: {e}")
+                        raise LoadError(f"Error upserting source record: {e}") from e
 
                 # Mark records not in source as deleted
                 if incoming_objectids:
@@ -325,15 +319,15 @@ def load_geojson_to_table(
                 else:
                     deleted = 0
 
+                _refresh_derived_catalog(cur, schema, table_name)
                 conn.commit()
 
-                print(f"  Upserted {inserted} records, marked {deleted} as deleted, {errors} errors")
+                print(f"  Upserted {inserted} records, marked {deleted} as deleted")
                 return inserted
 
     except Exception as e:
         conn.rollback()
-        print(f"  Error loading data: {e}")
-        return 0
+        raise LoadError(f"Load rolled back for {schema}.{table_name}: {e}") from e
 
     finally:
         conn.close()
@@ -383,10 +377,11 @@ def complete_sync_run(sync_run_id: int, stats: Dict[str, int], status: str = 'su
                     records_new = %s,
                     records_updated = %s,
                     records_deleted = %s,
+                    tables_synced = %s,
                     error_message = %s
                 WHERE id = %s
             ''', (status, stats.get('new', 0), stats.get('updated', 0),
-                  stats.get('deleted', 0), error_msg, sync_run_id))
+                  stats.get('deleted', 0), stats.get('tables_synced', 0), error_msg, sync_run_id))
             conn.commit()
     except Exception as e:
         print(f"  Warning: Could not complete sync run: {e}")
@@ -405,7 +400,8 @@ def log_change(
     changed_fields: List[str] = None,
     old_geom_wkt: str = None,
     new_geom_wkt: str = None,
-    record_id: int = None
+    record_id: int = None,
+    geometry_changed: Optional[bool] = None
 ):
     """Log a change to the changelog table."""
     if sync_run_id is None:
@@ -416,7 +412,8 @@ def log_change(
     old_fek = old_values.get('fek') if old_values else None
     new_fek = new_values.get('fek') if new_values else None
 
-    geometry_changed = (old_geom_wkt is not None or new_geom_wkt is not None) and old_geom_wkt != new_geom_wkt
+    if geometry_changed is None:
+        geometry_changed = (old_geom_wkt is not None or new_geom_wkt is not None) and old_geom_wkt != new_geom_wkt
 
     try:
         cur.execute(f'''
@@ -436,8 +433,10 @@ def log_change(
             new_geom_wkt if geometry_changed else None,
             old_fek, new_fek
         ))
-    except Exception:
-        pass  # Don't fail the sync if changelog write fails
+    except Exception as e:
+        # A failed SQL statement aborts this PostgreSQL transaction. Continuing
+        # would hide the failure and could report a rolled-back load as success.
+        raise LoadError(f"Could not write change audit for {table_name}: {e}") from e
 
 
 def load_geojson_with_tracking(
@@ -459,11 +458,14 @@ def load_geojson_with_tracking(
 
     Returns:
         Dict with counts and changes
+
+    Raises:
+        SyncError for invalid input; LoadError if the entire data load rolls back.
     """
     if schema is None:
         schema = DATABASE["schema"]
 
-    features = geojson.get("features", [])
+    features = validate_features(geojson, require_unique_ids=True)
     stats = {'new': 0, 'updated': 0, 'deleted': 0, 'unchanged': 0, 'errors': 0, 'changes': []}
 
     if not features:
@@ -476,14 +478,14 @@ def load_geojson_with_tracking(
 
         columns = get_table_columns(conn, schema, table_name)
         if not columns:
-            print(f"  Error: Could not get columns for {schema}.{table_name}")
-            return stats
+            raise LoadError(f"Could not get columns for {schema}.{table_name}")
 
         with conn.cursor() as cur:
             # Get existing records with all their values
             col_list_select = ", ".join(columns)
             cur.execute(f'''
-                SELECT id, objectid, {col_list_select}, ST_AsText(geom) as geom_wkt
+                SELECT id, objectid, {col_list_select}, ST_AsText(geom, 17) as geom_wkt,
+                       ST_AsEWKB(geom) as geom_ewkb
                 FROM {schema}."{table_name}"
                 WHERE is_deleted = FALSE OR is_deleted IS NULL
             ''')
@@ -492,23 +494,34 @@ def load_geojson_with_tracking(
             for row in cur.fetchall():
                 record_id = row[0]
                 objectid = row[1]
-                values = dict(zip(columns, row[2:-1]))
-                geom_wkt = row[-1]
+                values = dict(zip(columns, row[2:-2]))
+                geom_wkt = row[-2]
                 existing[objectid] = {
                     'id': record_id,
                     'values': values,
-                    'geom_wkt': geom_wkt
+                    'geom_wkt': geom_wkt,
+                    'geom_ewkb': row[-1],
                 }
+
+            # Compare once per batch, before any row is changed. Text length
+            # cannot detect coordinate moves and is sensitive to formatting.
+            incoming_wkts = {
+                feature_objectid(f['properties']): geometry_to_wkt(f['geometry'])
+                for f in features
+            }
+            geom_changes = geometry_changes(cur, [
+                (oid, existing[oid]['geom_ewkb'], wkt)
+                for oid, wkt in incoming_wkts.items() if oid in existing
+            ], srid)
 
             incoming_objectids = set()
             now = datetime.now()
 
             for feature in features:
                 props = feature.get("properties", {})
-                geom = feature.get("geometry")
 
-                objectid = props.get("OBJECTID") or props.get("objectid") or props.get("OBJECTID_1")
-                if objectid:
+                objectid = feature_objectid(props)
+                if objectid is not None:
                     incoming_objectids.add(objectid)
 
                 # Build row values
@@ -526,7 +539,7 @@ def load_geojson_with_tracking(
                 if table_name in AREA_RECALC_TABLES:
                     row_values.pop('area_m2', None)
 
-                wkt = geometry_to_wkt(geom)
+                wkt = incoming_wkts[objectid]
 
                 try:
                     if objectid not in existing:
@@ -569,16 +582,7 @@ def load_geojson_with_tracking(
                                 if str(old_norm) != str(new_norm):
                                     changed_fields.append(col)
 
-                        # Geometry change: WKT length comparison with 5% threshold
-                        if old_geom and wkt:
-                            len_diff = abs(len(old_geom) - len(wkt))
-                            max_len = max(len(old_geom), len(wkt))
-                            len_pct = len_diff / max_len if max_len > 0 else 0
-                            geom_changed = len_pct > 0.05
-                        elif old_geom is None and wkt is None:
-                            geom_changed = False
-                        else:
-                            geom_changed = True
+                        geom_changed = geom_changes[objectid]
 
                         if changed_fields or geom_changed:
                             # UPDATE
@@ -608,20 +612,18 @@ def load_geojson_with_tracking(
                                        changed_fields=changed_fields if changed_fields else None,
                                        old_geom_wkt=old_geom if geom_changed else None,
                                        new_geom_wkt=wkt if geom_changed else None,
-                                       record_id=old_record['id'])
+                                       record_id=old_record['id'], geometry_changed=geom_changed)
                         else:
                             stats['unchanged'] += 1
 
                 except Exception as e:
-                    stats['errors'] += 1
-                    if stats['errors'] <= 3:
-                        print(f"  Error processing record: {e}")
+                    raise LoadError(f"Error processing OBJECTID {objectid}: {e}") from e
 
             # Mark deleted records
             if incoming_objectids:
                 placeholders_list = ",".join(["%s"] * len(incoming_objectids))
                 cur.execute(f'''
-                    SELECT id, objectid, {col_list_select}, ST_AsText(geom) as geom_wkt
+                    SELECT id, objectid, {col_list_select}, ST_AsText(geom, 17) as geom_wkt
                     FROM {schema}."{table_name}"
                     WHERE objectid NOT IN ({placeholders_list})
                     AND (is_deleted = FALSE OR is_deleted IS NULL)
@@ -681,6 +683,7 @@ def load_geojson_with_tracking(
                 if stats['updated'] > 0 and count / stats['updated'] > 0.5
             ]
 
+            _refresh_derived_catalog(cur, schema, table_name)
             conn.commit()
 
             print(f"  New: {stats['new']}, Updated: {stats['updated']}, Deleted: {stats['deleted']}, Unchanged: {stats['unchanged']}, Errors: {stats['errors']}")
@@ -688,8 +691,7 @@ def load_geojson_with_tracking(
 
     except Exception as e:
         conn.rollback()
-        print(f"  Error loading data: {e}")
-        return stats
+        raise LoadError(f"Load rolled back for {schema}.{table_name}: {e}") from e
     finally:
         conn.close()
 
