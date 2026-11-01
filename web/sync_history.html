@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="el">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Ιστορικό συγχρονισμών · Spetses GIS</title>
+    <link rel="stylesheet" href="/sync-history/assets/sync_history.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <div class="mark" aria-hidden="true">S</div>
+        <strong>SPETSES GIS</strong>
+      </div>
+      <span>Παρακολούθηση δεδομένων</span>
+    </header>
+    <main>
+      <div class="intro">
+        <div>
+          <div class="eyebrow">Δεδομένα & ενημερώσεις</div>
+          <h1>Ιστορικό συγχρονισμών</h1>
+          <p class="muted">
+            Τι προστέθηκε, τι άλλαξε και τι αφαιρέθηκε από τη βάση.
+          </p>
+        </div>
+        <span class="badge" id="tracking">Έλεγχος καταγραφής…</span>
+      </div>
+      <form class="filters" id="filters">
+        <label
+          >Περίοδος<select id="period">
+            <option value="4m">Τελευταίοι 4 μήνες</option>
+            <option value="1m">Τελευταίος μήνας</option>
+            <option value="latest">Τελευταία εκτέλεση</option>
+            <option value="custom">Επιλογή ημερομηνιών</option>
+          </select></label
+        >
+        <label id="start-wrap" hidden>Από<input type="date" id="start" /></label
+        ><label id="end-wrap" hidden>Έως<input type="date" id="end" /></label>
+        <label
+          >Πηγή<select id="domain">
+            <option value="">Όλες οι πηγές</option>
+            <option value="tee">TEE · Πολεοδομία / Περιβάλλον</option>
+            <option value="ktima">Κτηματολόγιο</option>
+            <option value="ydro">Υδροληψίες ΕΜΣΥ</option>
+          </select></label
+        >
+        <label class="check"
+          ><input id="changed" type="checkbox" checked />Μόνο πίνακες με
+          αλλαγές</label
+        ><button class="primary" type="submit" id="refresh">Ενημέρωση</button>
+      </form>
+      <div id="message" class="notice" role="status" hidden></div>
+      <div class="cards" aria-label="Σύνοψη περιόδου">
+        <div class="card">
+          <div class="number" id="new">—</div>
+          <div class="name">Νέες εγγραφές</div>
+        </div>
+        <div class="card">
+          <div class="number" id="updated">—</div>
+          <div class="name">Τροποποιήσεις</div>
+        </div>
+        <div class="card">
+          <div class="number" id="removed">—</div>
+          <div class="name">Αφαιρέσεις</div>
+        </div>
+        <div class="card">
+          <div class="number" id="geometry">—</div>
+          <div class="name">Αλλαγές γεωμετρίας</div>
+        </div>
+      </div>
+      <p class="note" id="coverage">
+        Τα σύνολα περιλαμβάνουν μόνο ολοκληρωμένες δημοσιεύσεις. Οι αλλαγές
+        γεωμετρίας περιλαμβάνονται στις τροποποιήσεις.
+      </p>
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Αλλαγές ανά πίνακα</h2>
+          <small>Σύνολα συμβάντων μέσα στην περίοδο</small>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Πίνακας / πηγή</th>
+                <th class="n">Νέες</th>
+                <th class="n">Αλλαγές</th>
+                <th class="n">Αφαιρέσεις</th>
+                <th class="n">Γεωμετρία</th>
+                <th class="n">Μοναδικές εγγραφές</th>
+              </tr>
+            </thead>
+            <tbody id="layers"></tbody>
+          </table>
+        </div>
+        <div class="empty" id="layers-empty">Αναμονή δεδομένων…</div>
+      </section>
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Εκτελέσεις συγχρονισμού</h2>
+          <small id="run-count"></small>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Ημερομηνία · ώρα Ελλάδας</th>
+                <th>Πηγή</th>
+                <th>Κατάσταση</th>
+                <th class="n">Νέες / αλλαγές / αφαιρέσεις</th>
+              </tr>
+            </thead>
+            <tbody id="runs"></tbody>
+          </table>
+        </div>
+        <div class="empty" id="runs-empty">Αναμονή δεδομένων…</div>
+        <div class="pager">
+          <button id="runs-prev" type="button">Προηγούμενες</button
+          ><span id="runs-page"></span
+          ><button id="runs-next" type="button">Επόμενες</button>
+        </div>
+      </section>
+      <section class="panel" id="detail" hidden>
+        <div class="panel-head">
+          <div>
+            <h2>Λεπτομέρειες εκτέλεσης</h2>
+            <p class="muted" id="detail-title"></p>
+          </div>
+          <button id="close-detail" type="button">Κλείσιμο</button>
+        </div>
+        <form id="detail-filters" class="detail-filters">
+          <label
+            >Πίνακας<select id="detail-table">
+              <option value="">Όλοι οι πίνακες</option>
+            </select></label
+          ><label
+            >Μεταβολή<select id="kind">
+              <option value="">Αλλαγές δεδομένων</option>
+              <option value="new">Νέες</option>
+              <option value="updated">Τροποποιήσεις</option>
+              <option value="removed">Αφαιρέσεις</option>
+              <option value="source_id">Μόνο αλλαγή ID πηγής</option>
+            </select></label
+          ><label
+            >ΚΑΕΚ / αναγνωριστικό<input
+              id="key"
+              placeholder="Αναζήτηση κλειδιού…"
+              maxlength="200" /></label
+          ><button type="submit">Εφαρμογή</button>
+        </form>
+        <div id="changes"></div>
+        <div class="pager">
+          <button id="changes-prev" type="button">Προηγούμενες</button
+          ><span id="changes-page"></span
+          ><button id="changes-next" type="button">Επόμενες</button>
+        </div>
+      </section>
+      <footer>
+        Η καταγραφή αρχίζει από την ενεργοποίησή της. Τα παλιά JSON παραμένουν
+        εκτός ιστορικού. Τα raster / αντίγραφα NAS είναι ξεχωριστή διαδικασία.
+      </footer>
+    </main>
+    <script src="/sync-history/assets/sync_history.js" defer></script>
+  </body>
+</html>

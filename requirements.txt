@@ -21,3 +21,5 @@ shapely>=2.0.0
 # API server
 fastapi>=0.110.0
 uvicorn>=0.29.0
+# IANA timezone data for Greek history date boundaries on Windows.
+tzdata>=2025.1

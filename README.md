@@ -7,6 +7,10 @@ including validation, recovery references and the next acceptance work.
 
 ## Quick start
 
+Sync history: open **http://127.0.0.1:8000/sync-history** or menu **7**.
+One-time forward-only activation and count semantics: [SYNC_HISTORY.md](SYNC_HISTORY.md).
+Old JSON logs are not imported.
+
 For a new database, follow **DOCUMENTATION.md → Installation & Setup** first.
 `python database_setup.py` previews the TEE migration chain without writing;
 fresh setup applies versions 1 and 2, including the reviewed live views and
@@ -178,6 +182,10 @@ and orders finest-scale-first (which is also the correct draw order).
 - Requires PostgreSQL/PostGIS (`gis` database) and — for the `CLIPR` raster-clip command — QGIS 3.40+.
 
 ## Separate sync account
+
+Atomic publication across all selected data domains is available; see
+[SYNC_PUBLICATION.md](SYNC_PUBLICATION.md) for the one-grant activation and
+preview/update commands. After activation the existing menu uses it automatically.
 
 Keep `EPOL_DB_*` in `.env` on the API reader. Preview sync access with
 `setup_sync_writer.bat`; create the dedicated account once with

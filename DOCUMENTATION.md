@@ -458,6 +458,13 @@ a fresh TEE baseline alone is not a complete populated AutoCAD GIS installation.
 
 ### Using sync_menu.bat (Recommended)
 
+The read-only history page is `/sync-history`, also available as menu option 7
+or `sync_menu.bat history`. It shows committed changes by table, four-month
+filters and before/after record details. Activate once through the local
+schema-owner prompt in `setup_sync_history.py --apply`; see
+[SYNC_HISTORY.md](SYNC_HISTORY.md). Recording starts at activation, without old
+JSON/audit backfill. Only atomic menu data publications are covered.
+
 The API keeps its `EPOL_DB_*` reader credentials. The menu uses a dedicated
 `epol_sync` account through `sync_launcher.py`; it never falls back to API or
 owner credentials. The one-time setup is separate from schema migrations:
@@ -542,6 +549,15 @@ python sync_all.py --list
 
 ### Sync Exceptions / Important Notes
 
+The atomic path is documented in [SYNC_PUBLICATION.md](SYNC_PUBLICATION.md).
+After the reviewed one-grant activation, menu data modes publish all selected
+layers together; mode 5 includes TEE, cadastre and EMSY in one transaction.
+Direct legacy scripts below retain their per-layer transaction boundaries.
+The operator enabled the production grant on 2026-11-01; independent read-only
+checks confirm readiness and unchanged data/credentials. The first production
+atomic sync subsequently committed all 59 layers as audit #2; independent
+read-only audit checks and six unchanged HTTP reports confirm acceptance.
+
 - TEE downloads are validated in memory before loading. HTTP/ArcGIS errors,
   malformed responses, empty or repeated pages before completion, excess rows,
   and a changed source count abort that table's sync. A short page alone is not
@@ -555,8 +571,8 @@ python sync_all.py --list
 - A verified zero-count source keeps the existing table untouched. This is a
   deliberate safeguard; retiring an entire dataset requires a separate decision.
 - Offline regression tests: `python -m unittest discover -s tests -v` (see
-  `TESTING.md`). TEE, operating-cadastre and EMSY safeguards are covered; the
-  separate raster downloader still needs its own reliability review.
+  `TESTING.md`). TEE, operating-cadastre, EMSY, staged raster downloads, NAS
+  replication and atomic publication have separate failure/regression coverage.
 - Tracked TEE geometry changes use batched PostGIS `ST_Equals` comparisons in
   `sync_geometry.py`, with the stored geometry transported as EWKB to preserve
   coordinate precision. Coordinate moves, holes and NULL transitions are
@@ -606,7 +622,9 @@ python sync_all.py --list
   freeze current report behavior for refactoring; they do not verify the law,
   source classifications or the spatial calculations supplying those rows.
 - `building_regs_lot` (TEE Layer 17) is synced with full replace even when `--track` is used. The source service can return two meaningful rows with the same `OBJECTID` (`ΚΑΤΑ ΚΑΝΟΝΑ` and `ΚΑΤΑ ΠΑΡΕΚΚΛΙΣΗ`), so objectid-only change tracking collapses/overwrites records.
-- Full replacement uses `TRUNCATE ... CONTINUE IDENTITY` in the load transaction.
+- Legacy full replacement uses `TRUNCATE ... CONTINUE IDENTITY` in the load transaction.
+  Atomic publication uses guarded `DELETE/INSERT` for the lot table so old
+  snapshots remain readable. It requires DELETE only on that additional table.
   Generated import IDs advance across reloads; runtime writers need sequence
   USAGE, not sequence ownership/reset rights. A failed insert restores the old
   rows; sequence gaps are normal. Foreign-key consumers block truncation rather
@@ -705,6 +723,16 @@ SELECT * FROM epoleodomia.v_sync_status;
 ---
 
 ## 6. Database Schema
+
+The 2026-11-01 review of FEK raster exclusions, the OT 116 special regulation and
+shared sector boundaries is recorded in [DATA_REVIEW.md](DATA_REVIEW.md).
+`audit_planning_data.py` reproduces spatial evidence using read-only sessions;
+it does not apply data corrections or determine legal precedence.
+Its pair counts describe complete regulation zones. The separate inside-OT
+check uses the union of 558 active building blocks: 40 of 44 positive-area
+overlap pairs are entirely outside OT, and four intersect OT 33 by only
+0.0000235356 m² each. The overlap review is closed without runtime changes;
+see DATA_REVIEW.md for the operator's applicability criterion and evidence.
 
 ### Installed-schema audit — 2026-10-27
 

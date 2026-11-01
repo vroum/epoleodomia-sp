@@ -5,6 +5,7 @@ from contextlib import closing
 import os
 import subprocess
 import sys
+import webbrowser
 
 import psycopg2
 
@@ -30,6 +31,8 @@ def check_connection(database):
                 raise ValueError('Sync connection must authenticate as epol_sync')
             inspect_target(cur)
             verify_access(cur)
+            cur.execute("SELECT has_table_privilege(%s,'epoleodomia.building_regs_lot','DELETE')", (ROLE,))
+            return cur.fetchone()[0]
 
 
 def child_environment(database, environ=None):
@@ -44,7 +47,7 @@ def child_environment(database, environ=None):
 
 def choose_mode():
     choices = {'1': 'tee', '2': 'ktima', '3': 'ydro', '4': 'rasters',
-               '5': 'all', '6': 'all-rasters', '0': None}
+               '5': 'all', '6': 'all-rasters', '7': 'history', '0': None}
     while True:
         print('\nSpetses GIS - Sync Menu\n'
               '  1. TEE epoleodomia tables\n'
@@ -53,8 +56,9 @@ def choose_mode():
               '  4. TEE FEK raster downloads\n'
               '  5. ALL (1+2+3)\n'
               '  6. ALL + rasters (1+2+3+4)\n'
+              '  7. Sync history (browser, read-only)\n'
               '  0. Exit')
-        choice = input('Select [0-6]: ').strip()
+        choice = input('Select [0-7]: ').strip()
         if choice in choices:
             return choices[choice]
         print('Invalid choice.')
@@ -83,8 +87,9 @@ def run_replica(mode):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mode', choices=tuple(MODES), nargs='?')
+    parser.add_argument('mode', choices=(*MODES, 'history'), nargs='?')
     parser.add_argument('--check', action='store_true', help='Check sync access read-only; run no updates')
+    parser.add_argument('--atomic', action='store_true', help='Use one transaction for selected data domains; requires publication access')
     parser.add_argument('--raster-id', type=int, help='rasters only: select one catalog row')
     parser.add_argument('--limit', type=int, help='rasters only: maximum number of files')
     parser.add_argument('--parallel', type=int, help='rasters only: number of download workers')
@@ -93,6 +98,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.check and args.mode:
         parser.error('--check is standalone')
+    if args.atomic and args.mode not in ('tee', 'ktima', 'ydro', 'all', 'all-rasters'):
+        parser.error('--atomic requires an explicit data mode')
     raster_options = []
     for option in ('raster_id', 'limit', 'parallel'):
         number = getattr(args, option)
@@ -109,8 +116,13 @@ def main(argv=None):
         mode = args.mode if args.mode or args.check else choose_mode()
         if not mode and not args.check:
             return 0
+        if mode == 'history':
+            url = 'http://127.0.0.1:8000/sync-history'
+            webbrowser.open(url)
+            print(url + ' (API server must be running)')
+            return 0
         database = load_sync_database()
-        check_connection(database)
+        publication_ready = check_connection(database)
     except (SettingsError, ValueError) as exc:
         print(f'Sync access error: {exc}')
         return 1
@@ -124,23 +136,37 @@ def main(argv=None):
         print('Read-only access check passed. No updates run.')
         return 0
     environment = child_environment(database)
+    atomic = mode != 'rasters' and (args.atomic or publication_ready is True)
+    if atomic:
+        steps = ('publication', 'rasters') if mode == 'all-rasters' else ('publication',)
+        publication_mode = 'all' if mode == 'all-rasters' else mode
+        print('Selected data domains will publish in one transaction.', flush=True)
+    else:
+        steps = MODES[mode]
+        if mode != 'rasters':
+            print('Per-layer publication. enable_sync_publication.py previews the atomic-publication grant.', flush=True)
     failed = []
-    for step in MODES[mode]:
+    for step in steps:
         print(f'\n--- {step} ---', flush=True)
         try:
             if step == 'rasters' and not args.dry_run and not run_replica('pull'):
                 failed.append('rasters NAS pull')
             options = raster_options if step == 'rasters' else []
-            result = subprocess.run([sys.executable, '-B', *COMMANDS[step], *options],
+            command = ('sync_publication.py', publication_mode, '--apply') if step == 'publication' else COMMANDS[step]
+            result = subprocess.run([sys.executable, '-B', *command, *options],
                                     cwd=PROJECT_DIR, env=environment)
         except KeyboardInterrupt:
             return 130
         except OSError:
             print(f'Could not start {step}.')
             failed.append(step)
+            if step == 'publication':
+                break
             continue
         if result.returncode:
             failed.append(step)
+            if step == 'publication':
+                break  # No raster/file actions after a failed data transaction.
         elif step == 'rasters' and not args.dry_run:
             try:
                 if not run_replica('push'):

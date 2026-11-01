@@ -239,7 +239,7 @@ def fetch_features(bbox):
     return features
 
 
-def load(features, dry_run=False):
+def load(features, dry_run=False, *, connection=None):
     features = _validate_features(features)
     if dry_run:
         print(f"  [dry-run] {len(features)} σημεία υδροληψίας στο bbox")
@@ -250,7 +250,7 @@ def load(features, dry_run=False):
     if not features:
         return {"new": 0, "updated": 0, "unchanged": 0, "skipped": 0, "total": None}
 
-    conn = get_connection()
+    conn = connection if connection is not None else get_connection()
     try:
         with conn.cursor() as cur:
             source_objectids = [
@@ -293,15 +293,18 @@ def load(features, dry_run=False):
 
             cur.execute(f"SELECT COUNT(*) FROM {TABLE}")
             stats["total"] = cur.fetchone()[0]
-        conn.commit()
+        if connection is None:
+            conn.commit()
         return stats
     except Exception as exc:
-        conn.rollback()
+        if connection is None:
+            conn.rollback()
         hint = (' Review sync_ydrolipsies.py --init with the schema administrator.'
                 if isinstance(exc, psycopg2.errors.UndefinedTable) else '')
         raise LoadError(f"EMSY load rolled back: {exc}{hint}") from exc
     finally:
-        conn.close()
+        if connection is None:
+            conn.close()
 
 
 def main():

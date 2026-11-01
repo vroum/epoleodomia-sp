@@ -157,7 +157,8 @@ def load_geojson_to_table(
     table_name: str,
     schema: str = None,
     truncate: bool = True,
-    srid: int = 2100
+    srid: int = 2100,
+    *, connection=None, replace_via_delete=False
 ) -> int:
     """
     Load GeoJSON FeatureCollection into a PostGIS table.
@@ -179,12 +180,16 @@ def load_geojson_to_table(
     if schema is None:
         schema = DATABASE["schema"]
 
+    if replace_via_delete and (connection is None or not truncate or
+                              (schema, table_name) != ('epoleodomia', 'building_regs_lot')):
+        raise LoadError('MVCC replacement requires the publication transaction and the reviewed lot table')
+
     features = validate_features(geojson, require_unique_ids=not truncate)
     if not features:
         print(f"  No features to load into {schema}.{table_name}")
         return 0
 
-    conn = get_connection()
+    conn = connection if connection is not None else get_connection()
     try:
         # Get table columns
         columns = get_table_columns(conn, schema, table_name)
@@ -196,7 +201,10 @@ def load_geojson_to_table(
             if truncate:
                 # Replace all source rows, including legitimate duplicate IDs.
                 # Internal import IDs continue; resetting sequences is admin work.
-                cur.execute(f'TRUNCATE TABLE {schema}."{table_name}" CONTINUE IDENTITY')
+                if replace_via_delete:
+                    cur.execute(f'DELETE FROM {schema}."{table_name}"')
+                else:
+                    cur.execute(f'TRUNCATE TABLE {schema}."{table_name}" CONTINUE IDENTITY')
 
                 # Prepare insert statement
                 col_list = ", ".join(columns)
@@ -236,7 +244,8 @@ def load_geojson_to_table(
                         raise LoadError(f"Error inserting source record: {e}") from e
 
                 _refresh_derived_catalog(cur, schema, table_name)
-                conn.commit()
+                if connection is None:
+                    conn.commit()
 
                 print(f"  Inserted {inserted} records")
 
@@ -320,22 +329,25 @@ def load_geojson_to_table(
                     deleted = 0
 
                 _refresh_derived_catalog(cur, schema, table_name)
-                conn.commit()
+                if connection is None:
+                    conn.commit()
 
                 print(f"  Upserted {inserted} records, marked {deleted} as deleted")
                 return inserted
 
     except Exception as e:
-        conn.rollback()
+        if connection is None:
+            conn.rollback()
         raise LoadError(f"Load rolled back for {schema}.{table_name}: {e}") from e
 
     finally:
-        conn.close()
+        if connection is None:
+            conn.close()
 
 
-def start_sync_run(mode: str = 'track') -> Optional[int]:
+def start_sync_run(mode: str = 'track', *, connection=None) -> Optional[int]:
     """Start a new sync run and return its ID."""
-    conn = get_connection()
+    conn = connection if connection is not None else get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute("""
@@ -353,21 +365,25 @@ def start_sync_run(mode: str = 'track') -> Optional[int]:
                 RETURNING id
             ''', (mode,))
             sync_run_id = cur.fetchone()[0]
-            conn.commit()
+            if connection is None:
+                conn.commit()
             return sync_run_id
     except Exception as e:
+        if connection is not None:
+            raise
         print(f"  Warning: Could not start sync run: {e}")
         return None
     finally:
-        conn.close()
+        if connection is None:
+            conn.close()
 
 
-def complete_sync_run(sync_run_id: int, stats: Dict[str, int], status: str = 'success', error_msg: str = None):
+def complete_sync_run(sync_run_id: int, stats: Dict[str, int], status: str = 'success', error_msg: str = None, *, connection=None):
     """Complete a sync run with final stats."""
     if sync_run_id is None:
         return
 
-    conn = get_connection()
+    conn = connection if connection is not None else get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute(f'''
@@ -382,11 +398,15 @@ def complete_sync_run(sync_run_id: int, stats: Dict[str, int], status: str = 'su
                 WHERE id = %s
             ''', (status, stats.get('new', 0), stats.get('updated', 0),
                   stats.get('deleted', 0), stats.get('tables_synced', 0), error_msg, sync_run_id))
-            conn.commit()
+            if connection is None:
+                conn.commit()
     except Exception as e:
+        if connection is not None:
+            raise
         print(f"  Warning: Could not complete sync run: {e}")
     finally:
-        conn.close()
+        if connection is None:
+            conn.close()
 
 
 def log_change(
@@ -444,7 +464,8 @@ def load_geojson_with_tracking(
     table_name: str,
     schema: str = None,
     srid: int = 2100,
-    sync_run_id: int = None
+    sync_run_id: int = None,
+    *, connection=None
 ) -> Dict[str, Any]:
     """
     Load GeoJSON with full change tracking. Returns stats and change details.
@@ -472,7 +493,7 @@ def load_geojson_with_tracking(
         print(f"  No features to load into {schema}.{table_name}")
         return stats
 
-    conn = get_connection()
+    conn = connection if connection is not None else get_connection()
     try:
         check_tracking_columns(conn, schema, table_name)
 
@@ -673,7 +694,7 @@ def load_geojson_with_tracking(
                 for col, count in zero_counts.items():
                     pct = count / stats['updated'] * 100
                     if pct > 50:
-                        print(f"  ⚠ DATA QUALITY WARNING: {col} was zeroed/nulled "
+                        print(f"  DATA QUALITY WARNING: {col} was zeroed/nulled "
                               f"in {count}/{stats['updated']} updates ({pct:.0f}%) "
                               f"— possible API regression")
 
@@ -684,16 +705,19 @@ def load_geojson_with_tracking(
             ]
 
             _refresh_derived_catalog(cur, schema, table_name)
-            conn.commit()
+            if connection is None:
+                conn.commit()
 
             print(f"  New: {stats['new']}, Updated: {stats['updated']}, Deleted: {stats['deleted']}, Unchanged: {stats['unchanged']}, Errors: {stats['errors']}")
             return stats
 
     except Exception as e:
-        conn.rollback()
+        if connection is None:
+            conn.rollback()
         raise LoadError(f"Load rolled back for {schema}.{table_name}: {e}") from e
     finally:
-        conn.close()
+        if connection is None:
+            conn.close()
 
 
 def log_sync(
@@ -704,11 +728,12 @@ def log_sync(
     status: str,
     error_message: str = None,
     sync_started: datetime = None,
-    sync_completed: datetime = None
+    sync_completed: datetime = None,
+    *, connection=None
 ):
     """Log sync operation to sync_log table."""
     schema = DATABASE["schema"]
-    conn = get_connection()
+    conn = connection if connection is not None else get_connection()
 
     try:
         with conn.cursor() as cur:
@@ -721,11 +746,15 @@ def log_sync(
                 table_name, service_name, layer_id, records_fetched,
                 sync_started, sync_completed, status, error_message
             ))
-            conn.commit()
+            if connection is None:
+                conn.commit()
     except Exception as e:
+        if connection is not None:
+            raise
         print(f"  Error logging sync: {e}")
     finally:
-        conn.close()
+        if connection is None:
+            conn.close()
 
 
 # Tables with area_m2 that should always be recalculated from geometry
@@ -737,7 +766,7 @@ AREA_RECALC_TABLES = [
 ]
 
 
-def post_sync_recalculate(table_name: str, schema: str = None):
+def post_sync_recalculate(table_name: str, schema: str = None, *, connection=None):
     """
     Recalculate derived columns after sync.
     Currently: area_m2 from geometry for forest map tables.
@@ -748,7 +777,7 @@ def post_sync_recalculate(table_name: str, schema: str = None):
     if table_name not in AREA_RECALC_TABLES:
         return
 
-    conn = get_connection()
+    conn = connection if connection is not None else get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute(f'''
@@ -759,14 +788,19 @@ def post_sync_recalculate(table_name: str, schema: str = None):
                        OR abs(area_m2 - ST_Area(geom)) / NULLIF(ST_Area(geom), 0) > 0.01)
             ''')
             fixed = cur.rowcount
-            conn.commit()
+            if connection is None:
+                conn.commit()
             if fixed > 0:
-                print(f"  ⚠ Post-sync: recalculated area_m2 for {fixed} records in {table_name}")
+                print(f"  Post-sync: recalculated area_m2 for {fixed} records in {table_name}")
     except Exception as e:
-        conn.rollback()
+        if connection is not None:
+            raise
+        if connection is None:
+            conn.rollback()
         print(f"  Warning: post-sync area recalc failed for {table_name}: {e}")
     finally:
-        conn.close()
+        if connection is None:
+            conn.close()
 
 
 def execute_sql_file(filepath: str) -> bool:

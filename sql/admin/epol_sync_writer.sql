@@ -133,6 +133,17 @@ GRANT DELETE,INSERT ON "sp_geodata"."kaek_apokleistikes_operating" TO epol_sync;
 GRANT DELETE,INSERT ON "sp_geodata"."kaek_douleies_operating" TO epol_sync;
 GRANT DELETE,INSERT ON "sp_geodata"."kaek_parcels_operating" TO epol_sync;
 GRANT INSERT,UPDATE ON "sp_geodata"."ydrolipsies_emsy" TO epol_sync;
+GRANT DELETE ON "epoleodomia"."building_regs_lot" TO epol_sync;
+DO $$ BEGIN IF to_regclass('epol_meta.sync_history_config') IS NOT NULL THEN
+GRANT SELECT ON "epol_meta"."sync_history_config" TO epol_sync;
+GRANT SELECT ON "epol_meta"."sync_history_runs" TO epol_sync;
+GRANT SELECT ON "epol_meta"."sync_history_layers" TO epol_sync;
+GRANT SELECT ON "epol_meta"."sync_history_changes" TO epol_sync;
+GRANT INSERT ON "epol_meta"."sync_history_changes" TO epol_sync;
+GRANT INSERT ON "epol_meta"."sync_history_layers" TO epol_sync;
+GRANT INSERT,UPDATE ON "epol_meta"."sync_history_runs" TO epol_sync;
+GRANT USAGE ON SEQUENCE epol_meta.sync_history_changes_id_seq TO epol_sync;
+END IF; END $$;
 DO $$ DECLARE item record; BEGIN
     FOR item IN SELECT DISTINCT n.nspname,c.relname FROM pg_class c
         JOIN pg_namespace n ON n.oid=c.relnamespace

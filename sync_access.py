@@ -1,6 +1,7 @@
 """Explicit runtime grant contract, separate from schema migrations and API auth."""
 
 from config import SERVICES
+import sync_history
 
 ROLE = 'epol_sync'
 TEE_TABLES = sorted({layer['table'] for service in SERVICES.values() for layer in service['layers']})
@@ -52,6 +53,17 @@ def setup_sql():
                 statements.append(f'GRANT {action} ({", ".join(columns)}) ON {target} TO epol_sync;')
         else:
             statements.append(f'GRANT {",".join(sorted(rights))} ON {target} TO epol_sync;')
+    # New accounts support snapshot-safe lot replacement. Existing v1 accounts
+    # remain valid for legacy tools; atomic publication explicitly requires this.
+    statements.append('GRANT DELETE ON "epoleodomia"."building_regs_lot" TO epol_sync;')
+    # Optional journal: keep role creation valid on installations with history.
+    history_grants = ['GRANT SELECT ON ' + qualified(*relation) + ' TO epol_sync;'
+                      for relation in sync_history.RELATIONS]
+    history_grants += ['GRANT ' + ','.join(sorted(rights)) + ' ON ' + qualified(*relation) + ' TO epol_sync;'
+                       for relation, rights in sorted(sync_history.WRITE_SCOPE.items())]
+    history_grants.append('GRANT USAGE ON SEQUENCE epol_meta.sync_history_changes_id_seq TO epol_sync;')
+    statements.append("DO $$ BEGIN IF to_regclass('epol_meta.sync_history_config') IS NOT NULL THEN\n"
+                      + '\n'.join(history_grants) + '\nEND IF; END $$;')
     # Only sequences owned by these runtime target tables, including identity sequences.
     relations = ','.join("'" + qualified(s, t) + "'::regclass" for s, t in sorted(write_scope()))
     statements.append('''DO $$ DECLARE item record; BEGIN
@@ -110,6 +122,12 @@ def verify_access(cur, *, require_login=True):
         if cur.fetchone() != (True,):
             raise ValueError(f'Missing SELECT: {schema}.{table}')
     scope = write_scope()
+    if sync_history.installed(cur):
+        scope.update(sync_history.WRITE_SCOPE)
+        for relation in sync_history.RELATIONS:
+            cur.execute("SELECT has_table_privilege(%s,%s,'SELECT')", (ROLE, qualified(*relation)))
+            if cur.fetchone() != (True,):
+                raise ValueError('Missing SELECT: ' + '.'.join(relation))
     cur.execute('''SELECT n.nspname,c.relname,
         has_any_column_privilege(%s,c.oid,'INSERT'),has_any_column_privilege(%s,c.oid,'UPDATE'),
         has_table_privilege(%s,c.oid,'DELETE'),has_table_privilege(%s,c.oid,'TRUNCATE'),
@@ -123,6 +141,8 @@ def verify_access(cur, *, require_login=True):
     for schema, table, *rights in cur.fetchall():
         actual = {name for name, allowed in zip(('INSERT','UPDATE','DELETE','TRUNCATE','TRIGGER','REFERENCES'), rights) if allowed}
         expected = scope.get((schema, table), set())
+        if (schema, table) == ('epoleodomia', 'building_regs_lot') and 'DELETE' in actual:
+            expected = expected | {'DELETE'}
         if actual != expected:
             raise ValueError(f'Unexpected or missing write privileges: {schema}.{table}')
         found.add((schema, table))

@@ -13,6 +13,109 @@ See DOCUMENTATION.md section 6 for the installed-schema findings and limits.
 
 ## Offline regression tests
 
+The planning-data review on 2026-11-01 retains **299 passing offline cases**
+(487 discovered, 188 opt-in skipped) and passes **81 disposable PG16/PostGIS
+cases**. Five additional SQL cases validate the new read-only planning audit:
+positive overlaps with two candidates, shared-line versus point-only contact,
+soft-deleted exclusion, separate lot rule/exception variants, and a complete
+repeatable-read/read-only audit preserving all table values. The optional
+raster contract is an empty fixture view, not another raster catalog.
+
+The production audit reads the three FEK footprints through `v_all_rasters`,
+municipality intersections and all 65 active records in the five regulation
+tables. It records raw pair areas, attributes and Contains/Covers match counts;
+it makes no legal-priority selection or source edits. Scanned TEE gazettes were
+visually inspected, including every paragraph of the OT 116 special provision.
+The operator's 740Δ/1981 usability explanation is documented separately from
+measured GIS facts. Six actual HTTP reports remain byte-identical and the API
+remains healthy; no runtime restart or sync was performed. See DATA_REVIEW.md
+and local evidence in `logs/data_review_20261101/`.
+
+The supplementary read-only OT intersection check compares all 44 positive-area
+overlap pairs with the union of 558 active building blocks. Forty pairs have no
+positive area inside OT; four intersect OT 33 (OBJECTID 710082) by approximately
+0.0000235356 m² each. Raw results, including pair IDs, areas and affected blocks,
+are saved in `logs/data_review_20261101/overlaps_inside_blocks.json`. This was an
+installed-data check, separate from the five fixture cases above. Closing the
+review changes documentation only; no runtime changes or additional test run.
+
+The forward-only history update on 2026-11-01 passes **299 offline cases**
+(482 discovered, 183 opt-in skipped) and **76 disposable PG16/PostGIS cases**.
+New SQL tests cover an unchanged reimport including duplicate-ID lots, 10 new
+parcels plus three forest records, equal-count overlay replacements, source-ID
+renumbering, ring-order equality, geometry-only edits, complete rollback on a
+late journal error, missing/duplicate identities, redacted fetch failures,
+read-only API queries/pagination, distinct identities versus repeated events,
+literal identifier searches, restricted journal grants, transactional setup
+rollback, partial installation rejection and a real COMMIT with its response
+deliberately lost. Offline cases exercise Greek daylight-saving/date boundaries,
+route bounds, missing installation state and the credential-free menu shortcut.
+
+The verified full archive was also restored in isolated PG18/PostGIS and replayed
+with all 59 captured source layers. After establishing the current data and
+installing an empty journal, the same 23,018 source records produced zero new,
+updated, removed, geometry or source-ID-only changes; all 17 lot variants count
+unchanged. The recorded replay took 5.19 seconds in the disposable database;
+this is not a production performance measurement. Six complete reports match,
+actual ASGI overview/detail requests pass, all 96 production source-table
+fingerprints and `.env` match before/after, and frozen recipe/controller
+checksums are unchanged. No old history was imported and no production sync or
+journal DDL was run. Evidence: `logs/sync_history_review_20261101/result.json`.
+
+Browser checks cover the populated summary, source filtering, run drilldown and
+safe display of HTML-like attribute text using synthetic loopback fixtures.
+The actual restarted API serves the page/assets with a local-only asset policy;
+six real HTTP reports remain byte-identical. The production screen correctly
+states that journal activation is pending. Operator activation remains separate:
+`setup_sync_history.py --apply`; see SYNC_HISTORY.md.
+
+The atomic-publication update on 2026-11-01 passes **294 offline cases**
+(462 discovered, 168 opt-in skipped) and **61 disposable PG16/PostGIS cases**.
+Sixteen new offline cases cover full capture before any write transaction,
+preview/check isolation, duplicate/missing bundles, borrowed connection/audit
+ownership, late audit failure, commit uncertainty with audit identity,
+credential redaction, automatic menu routing and raster suppression when the
+publisher fails or cannot start. Nine new database cases run all selected domains
+as the real restricted role, retain old/new reader generations during writes,
+verify complete rollback after final-domain SQL, preserve metadata/duplicate
+lots, reject schema/FK drift, check lock release/competition and exercise the
+single-grant upgrade and independent cadastre/EMSY modes.
+
+A full immutable 117,247,779-byte backup was restored/prepared in a new PG18
+container with cron disabled. All 59 live-source layers were captured before
+publication. Injecting an error after the final EMSY writes preserved every
+original project row; a subsequent publication and identical-input repeat pass.
+Six complete reader reports run during uncommitted writes and remain unchanged
+after commit. Original relation metadata, curated data and raster judgements
+are preserved. All 96 production project-table fingerprints and `.env` remain
+unchanged; development production access was read-only.
+
+Evidence: `logs/atomic_rehearsal_20261101_f93701e8/result.json` and adjacent
+capture, publication and repeat receipts; final regression logs live under
+`logs/atomic_publication_20261101/`. The full-data rehearsal measured 68.95 s for
+capture, 2.39 s for its first local-copy transaction (including a deliberate
+pause for reports), 2.03 s for repeat publication and 0.30 s for all six reports
+during that pause. Six actual production HTTP report reads took 0.125–0.188 s
+each. These are small local-copy/baseline measurements, not production writer
+latency or a load/concurrency capacity test. The later two-line launcher fix
+also suppresses rasters if its publication process cannot start; dedicated
+offline cases cover that path. Publishing SQL is unchanged from the rehearsal.
+
+The operator subsequently enabled the single grant. Independent read-only checks
+confirm readiness, all 96 unchanged production table values, unchanged `.env`,
+no reader writes and healthy API.
+Evidence: `logs/atomic_publication_20261101/activation_verified.json`.
+The operator's first production atomic run then committed all 59 layers as audit
+#2. Independent read-only checks match its database audit and receipt; six actual
+HTTP reports remain byte-identical, `.env`/API health and the restricted writer
+contract pass. TEE has zero tracked changes/errors and 17 intentional lot-row
+replacements; parcels show no changes and all 72 EMSY points are unchanged.
+Overlay counts remain 21/725; their count-only digest does not prove geometry or
+attribute equality. Collection took 65.05 s and the production transaction 7.19 s
+(0.14 s commit); this single execution is not a load test. Verification did not
+repeat the sync. Evidence: `logs/atomic_publication_20261101/first_production_verified.json`.
+See `SYNC_PUBLICATION.md`. The preparation and migrations remain frozen.
+
 With the project dependencies installed (`pip install -r requirements.txt`):
 
 ```bash

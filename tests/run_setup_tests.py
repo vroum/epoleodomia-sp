@@ -46,6 +46,9 @@ def main():
                                "tests.test_tee_contract_postgis",
                                "tests.test_sync_writers_postgis",
                                "tests.test_sync_access_postgis",
+                               "tests.test_sync_publication_postgis",
+                               "tests.test_sync_history_postgis",
+                               "tests.test_planning_audit_postgis",
                                "-v"], cwd=root, env=env).returncode
     finally:
         if container_id:

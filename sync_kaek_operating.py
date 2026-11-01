@@ -299,8 +299,8 @@ def write_changes_report(diffs) -> Path:
     return path
 
 
-def sync_layer(conn, table: str, service: str):
-    """Returns (success: bool, diff: dict | None)."""
+def prepare_layer(table: str, service: str):
+    """Fetch/validate the entire layer without opening a database transaction."""
     print(f"\n=== {table}  <-  {service} ===")
     fields = get_layer_fields(service)
     if "kaek" not in {name.lower() for name, _ in fields}:
@@ -329,6 +329,12 @@ def sync_layer(conn, table: str, service: str):
             row.append(val)
         rows.append(tuple(row) + (geomjson,))
     print(f"  fetched: {len(rows)} features")
+    return fields, rows
+
+
+def sync_layer(conn, table: str, service: str):
+    """Returns (success: bool, diff: dict | None)."""
+    fields, rows = prepare_layer(table, service)
     if not rows:
         print("  nothing fetched — table left untouched")
         return False, None
@@ -340,7 +346,7 @@ def sync_layer(conn, table: str, service: str):
         raise LoadError(f"Cadastral load rolled back for {SCHEMA}.{table}: {exc}") from exc
 
 
-def _replace_layer(conn, table, fields, rows):
+def _replace_layer(conn, table, fields, rows, *, commit=True):
     """Stage all geometry, then publish without replacing the live relation."""
     import psycopg2.extras
 
@@ -376,11 +382,15 @@ def _replace_layer(conn, table, fields, rows):
         # a concurrent writer from changing the rows between those operations.
         cur.execute("SELECT to_regclass(%s)", (qualified,))
         if cur.fetchone()[0] is not None:
-            cur.execute(f'LOCK TABLE {qualified} IN ACCESS EXCLUSIVE MODE')
+            mode = 'ACCESS EXCLUSIVE' if commit else 'SHARE ROW EXCLUSIVE'
+            cur.execute(f'LOCK TABLE {qualified} IN {mode} MODE')
         diff = _diff_before_swap(cur, table, tmp, qualified)
         _publish_staged(cur, table, tmp, fields, len(rows))
-    conn.commit()
-    print(f"  loaded into {qualified}")
+        if not commit:
+            cur.execute(f'DROP TABLE {tmp}')
+    if commit:
+        conn.commit()
+    print(f"  {'loaded into' if commit else 'prepared in transaction for'} {qualified}")
     return True, diff
 
 

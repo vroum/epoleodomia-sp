@@ -41,6 +41,7 @@ from cadastre_geometry import (
 )
 from database_sessions import read_only_snapshot
 from settings import SETTINGS
+from sync_history_api import create_router as create_sync_history_router
 from raster_paths import resolve_fek_path
 from planning_data import (
     PlanningData,
@@ -194,6 +195,7 @@ app = FastAPI(
     version="2.1.0",  # 2.1.0: added /report/parcel (parcel-based EREPORT)
     lifespan=lifespan
 )
+app.include_router(create_sync_history_router(lambda: db_pool))
 
 # CORS middleware
 app.add_middleware(

@@ -1,5 +1,9 @@
 # Source checkpoint — 2026-11-01
 
+The later commands/API starting checkpoint on `codex/atomic-sync-publication`
+is described at the end of this document. The sections immediately below
+record the earlier `checkpoint-20261101` baseline.
+
 This checkpoint records the consolidated Python refactor, managed TEE lifecycle,
 restricted manual syncs and local/NAS TEE raster pipeline. The AutoCAD command
 layout and wire protocols remain compatible with the existing LISP modules.
@@ -96,3 +100,48 @@ Database restore and raster recovery use their own verified backups. Historical
 3. Review the three unexplained FEK exclusions and shared-sector/overlapping
    classification cases with domain evidence. Keep existing exclusions and
    human quality judgements until a documented decision is made.
+
+## Commands/API starting checkpoint — 2026-11-01
+
+Branch: `codex/atomic-sync-publication`, following baseline commit `c022dc1`.
+This checkpoint consolidates the work completed before the next round of
+AutoCAD command and API improvements:
+
+- Atomic publication of all selected TEE/cadastre/EMSY layers, with one data
+  transaction, reader-compatible locks and an explicit uncertain-commit outcome.
+  The first production run committed all 59 layers and preserved six reports;
+  see SYNC_PUBLICATION.md.
+- Forward-only sync history, scoped journal grants, a read-only history page,
+  configurable date ranges and before/after record details. A fresh HTTP check
+  confirms that production history is installed, with tracking start
+  `2026-11-01T08:51:32.169077+00:00` and no recorded runs yet. Old JSON history
+  is not imported; see SYNC_HISTORY.md.
+- Read-only review of the three FEK exclusions, the OT 116 special regulation
+  and zone overlaps. Applying the operator's inside-OT criterion puts 40 of 44
+  area-overlap pairs entirely outside OT; four have only 0.0000235356 m² each
+  inside OT 33. This finding requires no zone or runtime correction. See
+  DATA_REVIEW.md for evidence and the separate presentation/metadata follow-ups.
+
+The selected source tree excludes credentials, runtime logs, database archives,
+raster bytes and the unrelated `_to_delete/` and `ync_kaek_operating.py` items.
+The earlier checkpoint branch/tag remain intact. Recording and pushing this
+checkpoint do not run a production sync, apply SQL or restart the API.
+
+Validation for this checkpoint:
+
+- The exact staged export passes 487 discovered offline tests: 299 executed,
+  188 opt-in cases skipped, with no `.env` or copied virtual environment.
+- The preceding code review passed 81 disposable PG16/PostGIS cases. Those
+  results are retained from `logs/data_review_20261101/disposable_tests.log`;
+  the checkpoint does not repeat that database suite.
+- Selected Python files compile, changed text is UTF-8 without BOM with LF
+  endings, Git whitespace checks pass, and the staged tree is checked against
+  configured passwords without printing their values.
+- The frozen preparation and migration files remain byte-identical to the
+  preceding checkpoint. LISP files and existing command protocols are unchanged.
+
+Validation/export receipts live under ignored `logs/git_release_20261101/`.
+Next work can focus on one complete AutoCAD/API workflow at a time, beginning
+with EREPORT/OROITABLE. The first production history entry still needs to be
+observed during a normal manual sync. Optional 740Δ/1981 sheet selection, the
+OT 116 heading and the history map remain separately documented follow-ups.
